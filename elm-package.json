@@ -7,7 +7,8 @@
         "src"
     ],
     "exposed-modules": [
-        "Ansi"
+        "Ansi",
+        "Ansi.Log"
     ],
     "dependencies": {
         "elm-lang/core": "2.1.0 <= v < 3.0.0"

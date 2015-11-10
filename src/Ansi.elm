@@ -20,11 +20,11 @@ import String
 * `SetItalic` corresponds to `\e[3m`
 * `SetUnderline` corresponds to `\e[4m`
 * `SetInverted` corresponds to `\e[7m`
-* `Linebreak` corresponds to a '\n' character
-* `CarriageReturn` corresponds to a '\r' character
+* `Linebreak` corresponds to a `\n` character
+* `CarriageReturn` corresponds to a `\r` character
 * `Print` is a chunk of text which should be interpreted with the style implied
   by the preceding actions (i.e. `[Bold True, Print "foo"]`) should yield a bold
-  "foo"
+  `foo`
 * `Remainder` is a partial ANSI escape sequence, returned at the end of the
   actions if it was cut off. The next string passed to `parse` should have this
   prepended to it.
