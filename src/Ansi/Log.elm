@@ -1,10 +1,10 @@
-module Ansi.Log (Window, Line, Chunk, init, update) where
+module Ansi.Log (Window, Line, Chunk, CursorPosition, Style, init, update) where
 
 {-| Log interprets a stream of text and ANSI escape codes.
 
 @docs init, update
 
-@docs Window, Line, Chunk
+@docs Window, Line, Chunk, CursorPosition, Style
 -}
 
 import Array exposing (Array)
