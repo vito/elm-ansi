@@ -1,11 +1,11 @@
-module Ansi (Color(..), Action(..), parse) where
+module Ansi (Color(..), Action(..), EraseMode(..), parse) where
 
 {-| This library primarily exposes the `parse` function and the types that it
 will yield.
 
 @docs parse
 
-@docs Action, Color
+@docs Action, Color, EraseMode
 -}
 
 import Char
@@ -46,6 +46,8 @@ type Action
   | CursorForward Int
   | CursorBack Int
   | CursorPosition Int Int
+  | EraseDisplay EraseMode
+  | EraseLine EraseMode
 
 {-| The colors applied to the foreground/background.
 -}
@@ -66,6 +68,13 @@ type Color
   | BrightMagenta
   | BrightCyan
   | BrightWhite
+
+{-| Method to erase the display or line.
+-}
+type EraseMode
+  = EraseToBeginning
+  | EraseToEnd
+  | EraseAll
 
 {-| Convert an arbitrary String of text into a sequence of actions.
 
@@ -141,6 +150,12 @@ collectCodesMemo seq codes currentCode =
     'H' :: cs ->
       cursorPosition (codes ++ [currentCode]) cs
 
+    'J' :: cs ->
+      Complete [EraseDisplay (eraseMode (Maybe.withDefault 0 currentCode))] cs
+
+    'K' :: cs ->
+      Complete [EraseLine (eraseMode (Maybe.withDefault 0 currentCode))] cs
+
     'f' :: cs ->
       cursorPosition (codes ++ [currentCode]) cs
 
@@ -172,6 +187,13 @@ cursorPosition codes =
       Complete [CursorPosition row col]
     _ ->
       Unknown
+
+eraseMode : Int -> EraseMode
+eraseMode code =
+  case code of
+    0 -> EraseToBeginning
+    1 -> EraseToEnd
+    _ -> EraseAll
 
 codeActions : Int -> List Action
 codeActions code =
