@@ -45,6 +45,7 @@ type Action
   | CursorDown Int
   | CursorForward Int
   | CursorBack Int
+  | CursorPosition Int Int
 
 {-| The colors applied to the foreground/background.
 -}
@@ -119,31 +120,46 @@ type CodeParseResult
 collectCodes : List Char -> CodeParseResult
 collectCodes seq = collectCodesMemo seq [] Nothing
 
-collectCodesMemo : List Char -> (List Int) -> Maybe Int -> CodeParseResult
-collectCodesMemo seq codes currentNum =
+collectCodesMemo : List Char -> List (Maybe Int) -> Maybe Int -> CodeParseResult
+collectCodesMemo seq codes currentCode =
   case seq of
     'm' :: cs ->
-      Complete (List.concatMap codeActions (codes ++ [Maybe.withDefault 0 currentNum])) cs
+      Complete (List.concatMap (codeActions << Maybe.withDefault 0) (codes ++ [currentCode])) cs
 
     'A' :: cs ->
-      Complete [CursorUp (Maybe.withDefault 1 currentNum)] cs
+      Complete [CursorUp (Maybe.withDefault 1 currentCode)] cs
 
     'B' :: cs ->
-      Complete [CursorDown (Maybe.withDefault 1 currentNum)] cs
+      Complete [CursorDown (Maybe.withDefault 1 currentCode)] cs
 
     'C' :: cs ->
-      Complete [CursorForward (Maybe.withDefault 1 currentNum)] cs
+      Complete [CursorForward (Maybe.withDefault 1 currentCode)] cs
 
     'D' :: cs ->
-      Complete [CursorBack (Maybe.withDefault 1 currentNum)] cs
+      Complete [CursorBack (Maybe.withDefault 1 currentCode)] cs
+
+    'H' :: cs ->
+      case codes ++ [currentCode] of
+        [Nothing, Nothing] ->
+          Complete [CursorPosition 1 1] cs
+        [Nothing] ->
+          Complete [CursorPosition 1 1] cs
+        [Just row, Nothing] ->
+          Complete [CursorPosition row 1] cs
+        [Nothing, Just col] ->
+          Complete [CursorPosition 1 col] cs
+        [Just row, Just col] ->
+          Complete [CursorPosition row col] cs
+        _ ->
+          Unknown cs
 
     ';' :: cs ->
-      collectCodesMemo cs (codes ++ [Maybe.withDefault 0 currentNum]) Nothing
+      collectCodesMemo cs (codes ++ [currentCode]) Nothing
 
     c :: cs ->
       case String.toInt (String.fromChar c) of
         Ok num ->
-          collectCodesMemo cs codes (Just ((Maybe.withDefault 0 currentNum * 10) + num))
+          collectCodesMemo cs codes (Just ((Maybe.withDefault 0 currentCode * 10) + num))
         Err _ ->
           Unknown cs
 
