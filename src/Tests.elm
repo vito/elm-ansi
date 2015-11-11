@@ -55,8 +55,17 @@ all =
           , Ansi.SetUnderline False
           , Ansi.SetInverted False
           , Ansi.Print "reset again"
+          , Ansi.SetForeground Nothing
+          , Ansi.SetBackground Nothing
+          , Ansi.SetBold False
+          , Ansi.SetFaint False
+          , Ansi.SetItalic False
+          , Ansi.SetUnderline False
+          , Ansi.SetInverted False
+          , Ansi.SetForeground (Just Ansi.Red)
+          , Ansi.Print "reset to red"
           ]
-          (Ansi.parse "some text\x1b[0mreset\x1b[mreset again")
+          (Ansi.parse "some text\x1b[0mreset\x1b[mreset again\x1b[;31mreset to red")
     , test "carriage returns and linebreaks" <|
         assertEqual
           [ Ansi.Print "some text"
@@ -71,11 +80,11 @@ all =
           (Ansi.parse "some text\r\nnext line\roverwriting\nshifted down")
     , test "cursor movement" <|
         assertEqual
-          [ Ansi.CursorUp 1
-          , Ansi.CursorUp 10
+          [ Ansi.CursorUp 5
+          , Ansi.CursorUp 50
           , Ansi.CursorUp 1
           ]
-          (Ansi.parse "\x1b[1A\x1b[10A\x1b[A")
+          (Ansi.parse "\x1b[5A\x1b[50A\x1b[A")
     , test "partial escape sequence" <|
         assertEqual
           [Ansi.Print "foo", Ansi.Remainder "\x1b"]
@@ -92,4 +101,8 @@ all =
         assertEqual
           [Ansi.Print "foo\x1blol"]
           (Ansi.parse "foo\x1blol")
+    , test "unknown escape sequences" <|
+        assertEqual
+          [Ansi.Print "foobar"]
+          (Ansi.parse "foo\x1b[1Zbar")
     ]

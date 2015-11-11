@@ -86,8 +86,8 @@ parseChars seq =
         Incomplete ->
           [Remainder (String.fromList seq)]
 
-        Invalid ->
-          parseChars cs
+        Unknown rest ->
+          parseChars rest
 
         Complete actions rest ->
           actions ++ parseChars rest
@@ -110,7 +110,7 @@ parseChars seq =
 
 type CodeParseResult
   = Incomplete
-  | Invalid
+  | Unknown (List Char)
   | Complete (List Action) (List Char)
 
 collectCodes : List Char -> CodeParseResult
@@ -126,18 +126,14 @@ collectCodesMemo seq codes currentNum =
       Complete [CursorUp (Maybe.withDefault 1 currentNum)] cs
 
     ';' :: cs ->
-      case currentNum of
-        Just num ->
-          collectCodesMemo cs (codes ++ [num]) Nothing
-        Nothing ->
-          Invalid
+      collectCodesMemo cs (codes ++ [Maybe.withDefault 0 currentNum]) Nothing
 
     c :: cs ->
       case String.toInt (String.fromChar c) of
         Ok num ->
           collectCodesMemo cs codes (Just ((Maybe.withDefault 0 currentNum * 10) + num))
         Err _ ->
-          Invalid
+          Unknown cs
 
     [] ->
       Incomplete
