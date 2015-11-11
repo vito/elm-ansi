@@ -48,6 +48,8 @@ type Action
   | CursorPosition Int Int
   | EraseDisplay EraseMode
   | EraseLine EraseMode
+  | SaveCursorPosition
+  | RestoreCursorPosition
 
 {-| The colors applied to the foreground/background.
 -}
@@ -158,6 +160,12 @@ collectCodesMemo seq codes currentCode =
 
     'f' :: cs ->
       cursorPosition (codes ++ [currentCode]) cs
+
+    's' :: cs ->
+      Complete [SaveCursorPosition] cs
+
+    'u' :: cs ->
+      Complete [RestoreCursorPosition] cs
 
     ';' :: cs ->
       collectCodesMemo cs (codes ++ [currentCode]) Nothing
