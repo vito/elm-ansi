@@ -88,8 +88,10 @@ parseChars seq =
         Invalid ->
           parseChars cs
 
-        Complete codes rest ->
+        SetSGR codes rest ->
           (List.concatMap codeActions codes) ++ parseChars rest
+
+    ['\x1b'] -> [Remainder (String.fromList seq)]
 
     c :: cs ->
       let
@@ -107,8 +109,8 @@ parseChars seq =
 
 type CodeParseResult
   = Incomplete
-  | Complete (List Int) (List Char)
   | Invalid
+  | SetSGR (List Int) (List Char)
 
 collectCodes : List Char -> CodeParseResult
 collectCodes seq = collectCodesMemo seq [] ""
@@ -118,8 +120,8 @@ collectCodesMemo seq codes currentNum =
   case seq of
     'm' :: cs ->
       case String.toInt currentNum of
-        Ok num -> Complete (codes ++ [num]) cs
-        Err _ -> Invalid
+        Ok num -> SetSGR (codes ++ [num]) cs
+        Err _ -> Invalid -- TODO handle \e[m same as \e[0m
 
     ';' :: cs ->
       case String.toInt currentNum of
@@ -182,6 +184,7 @@ reset =
   [ SetForeground Nothing
   , SetBackground Nothing
   , SetBold False
+  , SetFaint False
   , SetItalic False
   , SetUnderline False
   , SetInverted False
