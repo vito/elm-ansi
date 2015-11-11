@@ -97,8 +97,13 @@ all =
           , Ansi.CursorPosition 1 1
           , Ansi.CursorPosition 1 1
           , Ansi.CursorPosition 50 50
+          , Ansi.CursorPosition 1 50
+          , Ansi.CursorPosition 50 1
+          , Ansi.CursorPosition 1 1
+          , Ansi.CursorPosition 1 1
+          , Ansi.CursorPosition 50 50
           ]
-          (Ansi.parse "\x1b[5A\x1b[50A\x1b[A\x1b[5B\x1b[50B\x1b[B\x1b[5C\x1b[50C\x1b[C\x1b[5D\x1b[50D\x1b[D\x1b[;50H\x1b[50;H\x1b[H\x1b[;H\x1b[50;50H")
+          (Ansi.parse "\x1b[5A\x1b[50A\x1b[A\x1b[5B\x1b[50B\x1b[B\x1b[5C\x1b[50C\x1b[C\x1b[5D\x1b[50D\x1b[D\x1b[;50H\x1b[50;H\x1b[H\x1b[;H\x1b[50;50H\x1b[;50f\x1b[50;f\x1b[f\x1b[;f\x1b[50;50f")
     , test "partial escape sequence" <|
         assertEqual
           [Ansi.Print "foo", Ansi.Remainder "\x1b"]

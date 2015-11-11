@@ -139,19 +139,10 @@ collectCodesMemo seq codes currentCode =
       Complete [CursorBack (Maybe.withDefault 1 currentCode)] cs
 
     'H' :: cs ->
-      case codes ++ [currentCode] of
-        [Nothing, Nothing] ->
-          Complete [CursorPosition 1 1] cs
-        [Nothing] ->
-          Complete [CursorPosition 1 1] cs
-        [Just row, Nothing] ->
-          Complete [CursorPosition row 1] cs
-        [Nothing, Just col] ->
-          Complete [CursorPosition 1 col] cs
-        [Just row, Just col] ->
-          Complete [CursorPosition row col] cs
-        _ ->
-          Unknown cs
+      cursorPosition (codes ++ [currentCode]) cs
+
+    'f' :: cs ->
+      cursorPosition (codes ++ [currentCode]) cs
 
     ';' :: cs ->
       collectCodesMemo cs (codes ++ [currentCode]) Nothing
@@ -165,6 +156,22 @@ collectCodesMemo seq codes currentCode =
 
     [] ->
       Incomplete
+
+cursorPosition : List (Maybe Int) -> List Char -> CodeParseResult
+cursorPosition codes =
+  case codes of
+    [Nothing, Nothing] ->
+      Complete [CursorPosition 1 1]
+    [Nothing] ->
+      Complete [CursorPosition 1 1]
+    [Just row, Nothing] ->
+      Complete [CursorPosition row 1]
+    [Nothing, Just col] ->
+      Complete [CursorPosition 1 col]
+    [Just row, Just col] ->
+      Complete [CursorPosition row col]
+    _ ->
+      Unknown
 
 codeActions : Int -> List Action
 codeActions code =
