@@ -43,6 +43,8 @@ type Action
   | Remainder String
   | CursorUp Int
   | CursorDown Int
+  | CursorForward Int
+  | CursorBack Int
 
 {-| The colors applied to the foreground/background.
 -}
@@ -128,6 +130,12 @@ collectCodesMemo seq codes currentNum =
 
     'B' :: cs ->
       Complete [CursorDown (Maybe.withDefault 1 currentNum)] cs
+
+    'C' :: cs ->
+      Complete [CursorForward (Maybe.withDefault 1 currentNum)] cs
+
+    'D' :: cs ->
+      Complete [CursorBack (Maybe.withDefault 1 currentNum)] cs
 
     ';' :: cs ->
       collectCodesMemo cs (codes ++ [Maybe.withDefault 0 currentNum]) Nothing
