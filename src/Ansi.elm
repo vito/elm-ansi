@@ -41,6 +41,7 @@ type Action
   | CarriageReturn
   | Print String
   | Remainder String
+  | CursorUp Int
 
 {-| The colors applied to the foreground/background.
 -}
@@ -88,8 +89,8 @@ parseChars seq =
         Invalid ->
           parseChars cs
 
-        SetSGR codes rest ->
-          (List.concatMap codeActions codes) ++ parseChars rest
+        Complete actions rest ->
+          actions ++ parseChars rest
 
     ['\x1b'] -> [Remainder (String.fromList seq)]
 
@@ -110,28 +111,33 @@ parseChars seq =
 type CodeParseResult
   = Incomplete
   | Invalid
-  | SetSGR (List Int) (List Char)
+  | Complete (List Action) (List Char)
 
 collectCodes : List Char -> CodeParseResult
-collectCodes seq = collectCodesMemo seq [] ""
+collectCodes seq = collectCodesMemo seq [] Nothing
 
-collectCodesMemo : List Char -> (List Int) -> String -> CodeParseResult
+collectCodesMemo : List Char -> (List Int) -> Maybe Int -> CodeParseResult
 collectCodesMemo seq codes currentNum =
   case seq of
     'm' :: cs ->
-      case String.toInt currentNum of
-        Ok num -> SetSGR (codes ++ [num]) cs
-        Err _ -> Invalid -- TODO handle \e[m same as \e[0m
+      Complete (List.concatMap codeActions (codes ++ [Maybe.withDefault 0 currentNum])) cs
+
+    'A' :: cs ->
+      Complete [CursorUp (Maybe.withDefault 1 currentNum)] cs
 
     ';' :: cs ->
-      case String.toInt currentNum of
-        Ok num -> collectCodesMemo cs (codes ++ [num]) ""
-        Err _ -> Invalid
+      case currentNum of
+        Just num ->
+          collectCodesMemo cs (codes ++ [num]) Nothing
+        Nothing ->
+          Invalid
 
     c :: cs ->
-      if Char.isDigit c
-         then collectCodesMemo cs codes (currentNum ++ String.fromChar c)
-         else Invalid
+      case String.toInt (String.fromChar c) of
+        Ok num ->
+          collectCodesMemo cs codes (Just ((Maybe.withDefault 0 currentNum * 10) + num))
+        Err _ ->
+          Invalid
 
     [] ->
       Incomplete

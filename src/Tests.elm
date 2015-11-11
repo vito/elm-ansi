@@ -47,8 +47,16 @@ all =
           , Ansi.SetUnderline False
           , Ansi.SetInverted False
           , Ansi.Print "reset"
+          , Ansi.SetForeground Nothing
+          , Ansi.SetBackground Nothing
+          , Ansi.SetBold False
+          , Ansi.SetFaint False
+          , Ansi.SetItalic False
+          , Ansi.SetUnderline False
+          , Ansi.SetInverted False
+          , Ansi.Print "reset again"
           ]
-          (Ansi.parse "some text\x1b[0mreset")
+          (Ansi.parse "some text\x1b[0mreset\x1b[mreset again")
     , test "carriage returns and linebreaks" <|
         assertEqual
           [ Ansi.Print "some text"
@@ -61,6 +69,13 @@ all =
           , Ansi.Print "shifted down"
           ]
           (Ansi.parse "some text\r\nnext line\roverwriting\nshifted down")
+    , test "cursor movement" <|
+        assertEqual
+          [ Ansi.CursorUp 1
+          , Ansi.CursorUp 10
+          , Ansi.CursorUp 1
+          ]
+          (Ansi.parse "\x1b[1A\x1b[10A\x1b[A")
     , test "partial escape sequence" <|
         assertEqual
           [Ansi.Print "foo", Ansi.Remainder "\x1b"]
