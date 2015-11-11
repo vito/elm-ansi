@@ -83,8 +83,11 @@ all =
           [ Ansi.CursorUp 5
           , Ansi.CursorUp 50
           , Ansi.CursorUp 1
+          , Ansi.CursorDown 5
+          , Ansi.CursorDown 50
+          , Ansi.CursorDown 1
           ]
-          (Ansi.parse "\x1b[5A\x1b[50A\x1b[A")
+          (Ansi.parse "\x1b[5A\x1b[50A\x1b[A\x1b[5B\x1b[50B\x1b[B")
     , test "partial escape sequence" <|
         assertEqual
           [Ansi.Print "foo", Ansi.Remainder "\x1b"]
