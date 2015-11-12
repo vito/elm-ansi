@@ -24,6 +24,7 @@ via `update`.
 type alias Window =
   { lines : Array Line
   , position : CursorPosition
+  , savedPosition : Maybe CursorPosition
   , style : Style
   , remainder : String
   }
@@ -68,6 +69,7 @@ init : Window
 init =
   { lines = Array.empty
   , position = { row = 0, column = 0 }
+  , savedPosition = Nothing
   , style =
     { foreground = Nothing
     , background = Nothing
@@ -87,7 +89,10 @@ call to `update`.
 -}
 update : String -> Window -> Window
 update str model =
-  List.foldl handleAction model (Ansi.parse (model.remainder ++ str))
+  List.foldl
+    handleAction
+    { model | remainder <- "" }
+    (Ansi.parse (model.remainder ++ str))
 
 handleAction : Ansi.Action -> Window -> Window
 handleAction action model =
@@ -102,13 +107,34 @@ handleAction action model =
                 , position <- moveCursor 0 (String.length s) model.position }
 
     Ansi.CarriageReturn ->
-      { model | position <- moveCursor 0 (-model.position.column) model.position }
+      { model | position <- CursorPosition model.position.row 0 }
 
     Ansi.Linebreak ->
       { model | position <- moveCursor 1 0 model.position }
 
     Ansi.Remainder s ->
       { model | remainder <- s }
+
+    Ansi.CursorUp num ->
+      { model | position <- moveCursor (-num) 0 model.position }
+
+    Ansi.CursorDown num ->
+      { model | position <- moveCursor num 0 model.position }
+
+    Ansi.CursorForward num ->
+      { model | position <- moveCursor 0 num model.position }
+
+    Ansi.CursorBack num ->
+      { model | position <- moveCursor 0 (-num) model.position }
+
+    Ansi.CursorPosition row col ->
+      { model | position <- CursorPosition (row - 1) (col - 1) }
+
+    Ansi.SaveCursorPosition ->
+      { model | savedPosition <- Just model.position }
+
+    Ansi.RestoreCursorPosition ->
+      { model | position <- Maybe.withDefault model.position model.savedPosition }
 
     _ ->
       { model | style <- updateStyle action model.style }
@@ -152,10 +178,19 @@ updateStyle action style =
     Ansi.SetUnderline b ->
       { style | underline <- b }
 
+    _ ->
+      style
+
 writeChunk : Int -> Chunk -> Line -> Line
 writeChunk pos chunk line =
   let
-    before = takeLen pos line
+    chunksBefore = takeLen pos line
+    chunksLen = lineLen chunksBefore
+    before =
+      if chunksLen < pos
+         then chunksBefore ++ [{ style = chunk.style, text = String.repeat (pos - chunksLen) " " }]
+         else chunksBefore
+
     after = dropLen (pos + String.length chunk.text) line
   in
     before ++ [chunk] ++ after
@@ -188,3 +223,9 @@ takeLen len line =
              else [{ lc | text <- String.left len lc.text }]
 
       [] -> []
+
+lineLen : Line -> Int
+lineLen line =
+  case line of
+    [] -> 0
+    c :: cs -> String.length c.text + lineLen cs

@@ -1,13 +1,20 @@
 module Tests where
 
+import Array
 import ElmTest.Test exposing (..)
 import ElmTest.Assertion exposing (..)
+import Regex
+import String
 
 import Ansi
+import Ansi.Log
 
 all : Test
-all =
-  suite "ANSI Parsing"
+all = suite "ANSI" [parsing, log]
+
+parsing : Test
+parsing =
+  suite "Parsing"
     [ test "colors" <|
         assertEqual
           [ Ansi.Print "normal"
@@ -142,4 +149,113 @@ all =
         assertEqual
           [Ansi.Print "foobar"]
           (Ansi.parse "foo\x1b[1Zbar")
+    ]
+
+assertWindowRendersAs : String -> List String -> Assertion
+assertWindowRendersAs rendered updates =
+  let
+    window = List.foldl Ansi.Log.update Ansi.Log.init updates
+  in
+    assertEqual (esc rendered) (esc <| renderWindow window)
+
+esc : String -> String
+esc = Regex.replace Regex.All (Regex.regex "\x1b") (always "\\e")
+
+renderWindow : Ansi.Log.Window -> String
+renderWindow window =
+  String.join "\r\n" (Array.toList (Array.map renderLine window.lines))
+
+renderLine : Ansi.Log.Line -> String
+renderLine line =
+  String.join "" (List.map renderChunk line)
+
+renderChunk : Ansi.Log.Chunk -> String
+renderChunk chunk =
+  "\x1b[0m" ++ styleFlags chunk.style ++ chunk.text
+
+styleFlags : Ansi.Log.Style -> String
+styleFlags style =
+  String.join ""
+    [ case style.foreground of
+        Nothing -> ""
+        Just fg -> "\x1b[" ++ toString (30 + colorCode fg) ++ "m"
+    , case style.background of
+        Nothing -> ""
+        Just bg -> "\x1b[" ++ toString (40 + colorCode bg) ++ "m"
+    , if style.bold then "\x1b[1m" else ""
+    , if style.faint then "\x1b[2m" else ""
+    , if style.italic then "\x1b[3m" else ""
+    , if style.underline then "\x1b[4m" else ""
+    , if style.inverted then "\x1b[7m" else ""
+    ]
+
+colorCode : Ansi.Color -> Int
+colorCode color =
+  case color of
+    Ansi.Black -> 0
+    Ansi.Red -> 1
+    Ansi.Green -> 2
+    Ansi.Yellow -> 3
+    Ansi.Blue -> 4
+    Ansi.Magenta -> 5
+    Ansi.Cyan -> 6
+    Ansi.White -> 7
+    Ansi.BrightBlack -> 60
+    Ansi.BrightRed -> 61
+    Ansi.BrightGreen -> 62
+    Ansi.BrightYellow -> 63
+    Ansi.BrightBlue -> 64
+    Ansi.BrightMagenta -> 65
+    Ansi.BrightCyan -> 66
+    Ansi.BrightWhite -> 67
+
+
+log : Test
+log =
+  suite "Log"
+    [ test "basic printing" <|
+        assertWindowRendersAs "\x1b[0mx" ["x"]
+    , test "colors" <|
+        assertWindowRendersAs
+          "\x1b[0m\x1b[31mred\x1b[0m\x1b[31m\x1b[41mred bg"
+          ["\x1b[31mred\x1b[41mred bg"]
+    , test "text styling" <|
+        assertWindowRendersAs
+          "\x1b[0mnormal\x1b[0m\x1b[1mbold\x1b[0m\x1b[1m\x1b[2mfaint\x1b[0m\x1b[1m\x1b[2m\x1b[3mitalic\x1b[0m\x1b[1m\x1b[2m\x1b[3m\x1b[4munderline\x1b[0m\x1b[1m\x1b[2m\x1b[3m\x1b[4m\x1b[7minverted"
+          ["normal\x1b[1mbold\x1b[2mfaint\x1b[3mitalic\x1b[4munderline\x1b[7minverted"]
+    , test "line overwriting" <|
+        assertWindowRendersAs
+          "\x1b[0m\x1b[31mred\x1b[0m baz"
+          ["foo\rbar baz\r\x1b[31mred"]
+    , test "new lines" <|
+        assertWindowRendersAs
+          "\x1b[0m\x1b[41mfoo\r\n\x1b[0m\x1b[41m   \x1b[0m\x1b[41mbar baz"
+          ["\x1b[41mfoo\nbar baz"]
+    , test "ansi escapes on boundaries" <|
+        assertWindowRendersAs
+          "\x1b[0m\x1b[41mfoo\x1b[0m\x1b[31m\x1b[41mbar baz"
+          ["\x1b[4", "1mfoo", "\x1b", "[31mbar baz"]
+    , test "cursor movement" <|
+        assertWindowRendersAs
+          "\x1b[0mONE\r\n\x1b[0mtwo\r\n\x1b[0mthr\x1b[0mx\x1b[0me\x1b[0mE\r\n\x1b[0mf\x1b[0m!!\x1b[0mr\r\n\x1b[0mxyz"
+          [ "one\r\ntwo\r\nthree\r\nfour\r\nxyz\r"
+          , "\x1b[4AONE"
+          , "\x1b[2Bx"
+          , "\x1b[CE"
+          , "\x1b[B"
+          , "\x1b[5D!!"
+          ]
+    , test "setting the cursor position" <|
+        assertWindowRendersAs
+          "\x1b[0mone\r\n\x1b[0mtwo\r\n\x1b[0mt\x1b[0mHR\x1b[0mee\r\n\x1b[0mf\x1b[0mOU\x1b[0mr\r\n\x1b[0mxyz"
+          [ "one\r\ntwo\r\nthree\r\nfour\r\nxyz\r"
+          , "\x1b[3;2HHR"
+          , "\x1b[4;2fOU"
+          ]
+    , test "saving and restoring the cursor position" <|
+        assertWindowRendersAs
+          "\x1b[0mone\r\n\x1b[0mtwo\r\n\x1b[0mt\x1b[0mHR\x1b[0mee\r\n\x1b[0mfour\r\n\x1b[0mxyz"
+          [ "one\r\ntwo\r\nt\x1b[shree\r\nfour\r\nxyz\r"
+          , "\x1b[uHR"
+          ]
     ]
