@@ -10,7 +10,6 @@ will yield.
 
 import Char
 import String
-import Regex
 
 {-| The events relevant to interpreting the stream.
 
@@ -71,6 +70,22 @@ type EraseMode
   | EraseToEnd
   | EraseAll
 
+type alias Parser =
+  { actions : List Action
+  , state : ParserState
+  }
+
+type ParserState
+  = Escaped
+  | CSI (List (Maybe Int)) (Maybe Int)
+  | Unescaped String
+
+emptyParser : Parser
+emptyParser =
+  { actions = []
+  , state = Unescaped ""
+  }
+
 {-| Convert an arbitrary String of text into a sequence of actions.
 
 If the input string ends with a partial ANSI escape sequence, it will be
@@ -78,116 +93,137 @@ yielded as a `Remainder` action, which should then be prepended to the next
 call to `parse`.
 -}
 parse : String -> List Action
-parse = parseChars << String.toList
+parse str =
+  completeParsing <|
+    String.foldl parseChar emptyParser str
 
-parseChars : List Char -> List Action
-parseChars seq =
-  case seq of
-    '\r' :: cs ->
-      CarriageReturn :: parseChars cs
+completeParsing : Parser -> List Action
+completeParsing parser =
+  case parser.state of
+    Escaped ->
+      parser.actions ++ [Remainder "\x1b"]
 
-    '\n' :: cs ->
-      Linebreak :: parseChars cs
+    CSI codes currentCode ->
+      parser.actions ++ [Remainder <| "\x1b[" ++ encodeCodes (codes ++ [currentCode])]
 
-    '\x1b' :: '[' :: cs ->
-      case collectCodes cs of
-        Incomplete ->
-          [Remainder (String.fromList seq)]
+    Unescaped "" ->
+      parser.actions
 
-        Unknown rest ->
-          parseChars rest
+    Unescaped str ->
+      parser.actions ++ [Print str]
 
-        Complete actions rest ->
-          actions ++ parseChars rest
+encodeCodes : List (Maybe Int) -> String
+encodeCodes codes =
+  String.join ";" (List.map encodeCode codes)
 
-    ['\x1b'] -> [Remainder (String.fromList seq)]
+encodeCode : Maybe Int -> String
+encodeCode code =
+  case code of
+    Nothing -> ""
+    Just num -> toString num
 
-    c :: cs ->
-      let
-        rest = parseChars cs
-      in
-        case rest of
-          Print s :: actions ->
-            Print (String.cons c s) :: actions
+parseChar : Char -> Parser -> Parser
+parseChar char parser =
+  case parser.state of
+    Unescaped str ->
+      case char of
+        '\r' -> completeUnescaped parser [CarriageReturn]
+        '\n' -> completeUnescaped parser [Linebreak]
+        '\x1b' ->
+          let completed = completeUnescaped parser []
+          in { completed | state <- Escaped }
+        _ -> { parser | state <- Unescaped (str ++ String.fromChar char) }
 
-          actions ->
-            Print (String.fromChar c) :: actions
+    Escaped ->
+      case char of
+        '[' -> { parser | state <- CSI [] Nothing }
+        _ -> { parser | state <- Unescaped (String.fromChar char) }
 
-    [] ->
-      []
+    CSI codes currentCode ->
+      case char of
+        'm' ->
+          completeBracketed parser <|
+            List.concatMap
+              (codeActions << Maybe.withDefault 0)
+              (codes ++ [currentCode])
 
-type CodeParseResult
-  = Incomplete
-  | Unknown (List Char)
-  | Complete (List Action) (List Char)
+        'A' ->
+          completeBracketed parser
+            [CursorUp (Maybe.withDefault 1 currentCode)]
 
-collectCodes : List Char -> CodeParseResult
-collectCodes seq = collectCodesMemo seq [] Nothing
+        'B' ->
+          completeBracketed parser
+            [CursorDown (Maybe.withDefault 1 currentCode)]
 
-collectCodesMemo : List Char -> List (Maybe Int) -> Maybe Int -> CodeParseResult
-collectCodesMemo seq codes currentCode =
-  case seq of
-    'm' :: cs ->
-      Complete (List.concatMap (codeActions << Maybe.withDefault 0) (codes ++ [currentCode])) cs
+        'C' ->
+          completeBracketed parser
+            [CursorForward (Maybe.withDefault 1 currentCode)]
 
-    'A' :: cs ->
-      Complete [CursorUp (Maybe.withDefault 1 currentCode)] cs
+        'D' ->
+          completeBracketed parser
+            [CursorBack (Maybe.withDefault 1 currentCode)]
 
-    'B' :: cs ->
-      Complete [CursorDown (Maybe.withDefault 1 currentCode)] cs
+        'H' ->
+          completeBracketed parser <|
+            cursorPosition (codes ++ [currentCode])
 
-    'C' :: cs ->
-      Complete [CursorForward (Maybe.withDefault 1 currentCode)] cs
+        'J' ->
+          completeBracketed parser
+            [EraseDisplay (eraseMode (Maybe.withDefault 0 currentCode))]
 
-    'D' :: cs ->
-      Complete [CursorBack (Maybe.withDefault 1 currentCode)] cs
+        'K' ->
+          completeBracketed parser
+            [EraseLine (eraseMode (Maybe.withDefault 0 currentCode))]
 
-    'H' :: cs ->
-      cursorPosition (codes ++ [currentCode]) cs
+        'f' ->
+          completeBracketed parser <|
+            cursorPosition (codes ++ [currentCode])
 
-    'J' :: cs ->
-      Complete [EraseDisplay (eraseMode (Maybe.withDefault 0 currentCode))] cs
+        's' ->
+          completeBracketed parser [SaveCursorPosition]
 
-    'K' :: cs ->
-      Complete [EraseLine (eraseMode (Maybe.withDefault 0 currentCode))] cs
+        'u' ->
+          completeBracketed parser [RestoreCursorPosition]
 
-    'f' :: cs ->
-      cursorPosition (codes ++ [currentCode]) cs
+        ';' ->
+          { parser | state <- CSI (codes ++ [currentCode]) Nothing }
 
-    's' :: cs ->
-      Complete [SaveCursorPosition] cs
+        c ->
+          if Char.isDigit c
+            then { parser | state <- CSI codes (Just ((Maybe.withDefault 0 currentCode * 10) + (Char.toCode c - 48))) }
+            else completeBracketed parser []
 
-    'u' :: cs ->
-      Complete [RestoreCursorPosition] cs
 
-    ';' :: cs ->
-      collectCodesMemo cs (codes ++ [currentCode]) Nothing
+completeUnescaped : Parser -> List Action -> Parser
+completeUnescaped parser actions =
+  case parser.state of
+    Unescaped "" ->
+      { parser | actions <- parser.actions ++ actions }
 
-    c :: cs ->
-      case String.toInt (String.fromChar c) of
-        Ok num ->
-          collectCodesMemo cs codes (Just ((Maybe.withDefault 0 currentCode * 10) + num))
-        Err _ ->
-          Unknown cs
+    Unescaped str ->
+      { parser | actions <- parser.actions ++ [Print str] ++ actions
+               , state <- Unescaped "" }
 
-    [] ->
-      Incomplete
+completeBracketed : Parser -> List Action -> Parser
+completeBracketed parser actions =
+  { parser | actions <- parser.actions ++ actions
+           , state <- Unescaped "" }
 
-cursorPosition : List (Maybe Int) -> List Char -> CodeParseResult
+cursorPosition : List (Maybe Int) -> List Action
 cursorPosition codes =
   case codes of
     [Nothing, Nothing] ->
-      Complete [CursorPosition 1 1]
+      [CursorPosition 1 1]
     [Nothing] ->
-      Complete [CursorPosition 1 1]
+      [CursorPosition 1 1]
     [Just row, Nothing] ->
-      Complete [CursorPosition row 1]
+      [CursorPosition row 1]
     [Nothing, Just col] ->
-      Complete [CursorPosition 1 col]
+      [CursorPosition 1 col]
     [Just row, Just col] ->
-      Complete [CursorPosition row col]
+      [CursorPosition row col]
     _ ->
-      Unknown
+      []
 
 eraseMode : Int -> EraseMode
 eraseMode code =

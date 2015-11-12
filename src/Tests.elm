@@ -141,13 +141,17 @@ parsing =
         assertEqual
           [Ansi.Print "foo", Ansi.Remainder "\x1b[31;32"]
           (Ansi.parse "foo\x1b[31;32")
-    , test "invalid escape sequences" <|
+    , test "invalid escape sequences (no bracket)" <|
         assertEqual
-          [Ansi.Print "foo\x1blol"]
+          [Ansi.Print "foo", Ansi.Print "lol"]
           (Ansi.parse "foo\x1blol")
+    , test "invalid escape sequences (double bracket)" <|
+        assertEqual
+          [Ansi.Print "foo", Ansi.Print "lol"]
+          (Ansi.parse "foo\x1b[[lol")
     , test "unknown escape sequences" <|
         assertEqual
-          [Ansi.Print "foobar"]
+          [Ansi.Print "foo", Ansi.Print "bar"]
           (Ansi.parse "foo\x1b[1Zbar")
     ]
 
