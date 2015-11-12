@@ -192,8 +192,8 @@ cursorPosition codes =
 eraseMode : Int -> EraseMode
 eraseMode code =
   case code of
-    0 -> EraseToBeginning
-    1 -> EraseToEnd
+    0 -> EraseToEnd
+    1 -> EraseToBeginning
     _ -> EraseAll
 
 codeActions : Int -> List Action

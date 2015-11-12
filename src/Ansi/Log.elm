@@ -136,6 +136,26 @@ handleAction action model =
     Ansi.RestoreCursorPosition ->
       { model | position <- Maybe.withDefault model.position model.savedPosition }
 
+    Ansi.EraseLine mode ->
+      case mode of
+        Ansi.EraseToBeginning ->
+          let
+            chunk = Chunk (String.repeat model.position.column " ") model.style
+            lineToChange = Maybe.withDefault [] (Array.get (model.position.row) model.lines)
+            line = writeChunk 0 chunk lineToChange
+          in
+            { model | lines <- setLine model.position.row line model.lines }
+
+        Ansi.EraseToEnd ->
+          let
+            lineToChange = Maybe.withDefault [] (Array.get (model.position.row) model.lines)
+            line = takeLen model.position.column lineToChange
+          in
+            { model | lines <- setLine model.position.row line model.lines }
+
+        Ansi.EraseAll ->
+          { model | lines <- setLine model.position.row [] model.lines }
+
     _ ->
       { model | style <- updateStyle action model.style }
 

@@ -119,13 +119,13 @@ parsing =
           (Ansi.parse "\x1b[s\x1b[u")
     , test "erasure" <|
         assertEqual
-          [ Ansi.EraseDisplay Ansi.EraseToBeginning
-          , Ansi.EraseDisplay Ansi.EraseToBeginning
+          [ Ansi.EraseDisplay Ansi.EraseToEnd
           , Ansi.EraseDisplay Ansi.EraseToEnd
+          , Ansi.EraseDisplay Ansi.EraseToBeginning
           , Ansi.EraseDisplay Ansi.EraseAll
-          , Ansi.EraseLine Ansi.EraseToBeginning
-          , Ansi.EraseLine Ansi.EraseToBeginning
           , Ansi.EraseLine Ansi.EraseToEnd
+          , Ansi.EraseLine Ansi.EraseToEnd
+          , Ansi.EraseLine Ansi.EraseToBeginning
           , Ansi.EraseLine Ansi.EraseAll
           ]
           (Ansi.parse "\x1b[J\x1b[0J\x1b[1J\x1b[2J\x1b[K\x1b[0K\x1b[1K\x1b[2K")
@@ -257,5 +257,12 @@ log =
           "\x1b[0mone\r\n\x1b[0mtwo\r\n\x1b[0mt\x1b[0mHR\x1b[0mee\r\n\x1b[0mfour\r\n\x1b[0mxyz"
           [ "one\r\ntwo\r\nt\x1b[shree\r\nfour\r\nxyz\r"
           , "\x1b[uHR"
+          ]
+    , test "erasing line contents" <|
+        assertWindowRendersAs
+          "\x1b[0mone\x1b[0mTWO\r\n\x1b[0m   \x1b[0mTWO\r\n\x1b[0m      \x1b[0mTHREEFOUR"
+          [ "onetwenty\x1b[6D\x1b[KTWO\r\n"
+          , "onetwo\x1b[3D\x1b[1KTWO\r\n"
+          , "onetwo\x1b[2KTHREEFOUR\r\n"
           ]
     ]
