@@ -1,9 +1,9 @@
-module Ansi (Color(..), Action(..), EraseMode(..), parse) where
+module Ansi (Color(..), Action(..), EraseMode(..), parse, parseInto) where
 
 {-| This library primarily exposes the `parse` function and the types that it
 will yield.
 
-@docs parse
+@docs parse, parseInto
 
 @docs Action, Color, EraseMode
 -}
@@ -70,21 +70,15 @@ type EraseMode
   | EraseToEnd
   | EraseAll
 
-type alias Parser =
-  { actions : List Action
-  , state : ParserState
-  }
+type Parser a = Parser ParserState a (Action -> a -> a)
 
 type ParserState
   = Escaped
   | CSI (List (Maybe Int)) (Maybe Int)
   | Unescaped String
 
-emptyParser : Parser
-emptyParser =
-  { actions = []
-  , state = Unescaped ""
-  }
+emptyParser : a -> (Action -> a -> a) -> Parser a
+emptyParser = Parser (Unescaped "")
 
 {-| Convert an arbitrary String of text into a sequence of actions.
 
@@ -93,24 +87,29 @@ yielded as a `Remainder` action, which should then be prepended to the next
 call to `parse`.
 -}
 parse : String -> List Action
-parse str =
-  completeParsing <|
-    String.foldl parseChar emptyParser str
+parse = List.reverse << parseInto [] (::)
 
-completeParsing : Parser -> List Action
+{-| Update a structure with actions parsed out of the given string.
+-}
+parseInto : a -> (Action -> a -> a) -> String -> a
+parseInto model update =
+  completeParsing <<
+    String.foldl parseChar (emptyParser model update)
+
+completeParsing : Parser a -> a
 completeParsing parser =
-  case parser.state of
-    Escaped ->
-      parser.actions ++ [Remainder "\x1b"]
+  case parser of
+    Parser Escaped model update ->
+      update (Remainder "\x1b") model
 
-    CSI codes currentCode ->
-      parser.actions ++ [Remainder <| "\x1b[" ++ encodeCodes (codes ++ [currentCode])]
+    Parser (CSI codes currentCode) model update ->
+      update (Remainder <| "\x1b[" ++ encodeCodes (codes ++ [currentCode])) model
 
-    Unescaped "" ->
-      parser.actions
+    Parser (Unescaped "") model _ ->
+      model
 
-    Unescaped str ->
-      parser.actions ++ [Print str]
+    Parser (Unescaped str) model update ->
+      update (Print str) model
 
 encodeCodes : List (Maybe Int) -> String
 encodeCodes codes =
@@ -122,24 +121,28 @@ encodeCode code =
     Nothing -> ""
     Just num -> toString num
 
-parseChar : Char -> Parser -> Parser
+parseChar : Char -> Parser a -> Parser a
 parseChar char parser =
-  case parser.state of
-    Unescaped str ->
+  case parser of
+    Parser (Unescaped str) model update ->
       case char of
-        '\r' -> completeUnescaped parser [CarriageReturn]
-        '\n' -> completeUnescaped parser [Linebreak]
+        '\r' ->
+          Parser (Unescaped "") (update CarriageReturn (completeUnescaped parser)) update
+        '\n' ->
+          Parser (Unescaped "") (update Linebreak (completeUnescaped parser)) update
         '\x1b' ->
-          let completed = completeUnescaped parser []
-          in { completed | state <- Escaped }
-        _ -> { parser | state <- Unescaped (str ++ String.fromChar char) }
+          Parser Escaped (completeUnescaped parser) update
+        _ ->
+          Parser (Unescaped (str ++ String.fromChar char)) model update
 
-    Escaped ->
+    Parser Escaped model update ->
       case char of
-        '[' -> { parser | state <- CSI [] Nothing }
-        _ -> { parser | state <- Unescaped (String.fromChar char) }
+        '[' ->
+          Parser (CSI [] Nothing) model update
+        _ ->
+          Parser (Unescaped (String.fromChar char)) model update
 
-    CSI codes currentCode ->
+    Parser (CSI codes currentCode) model update ->
       case char of
         'm' ->
           completeBracketed parser <|
@@ -186,28 +189,26 @@ parseChar char parser =
           completeBracketed parser [RestoreCursorPosition]
 
         ';' ->
-          { parser | state <- CSI (codes ++ [currentCode]) Nothing }
+          Parser (CSI (codes ++ [currentCode]) Nothing) model update
 
         c ->
           if Char.isDigit c
-            then { parser | state <- CSI codes (Just ((Maybe.withDefault 0 currentCode * 10) + (Char.toCode c - 48))) }
+            then Parser (CSI codes (Just ((Maybe.withDefault 0 currentCode * 10) + (Char.toCode c - 48)))) model update
             else completeBracketed parser []
 
 
-completeUnescaped : Parser -> List Action -> Parser
-completeUnescaped parser actions =
-  case parser.state of
-    Unescaped "" ->
-      { parser | actions <- parser.actions ++ actions }
+completeUnescaped : Parser a -> a
+completeUnescaped parser =
+  case parser of
+    Parser (Unescaped "") model update ->
+      model
 
-    Unescaped str ->
-      { parser | actions <- parser.actions ++ [Print str] ++ actions
-               , state <- Unescaped "" }
+    Parser (Unescaped str) model update ->
+      update (Print str) model
 
-completeBracketed : Parser -> List Action -> Parser
-completeBracketed parser actions =
-  { parser | actions <- parser.actions ++ actions
-           , state <- Unescaped "" }
+completeBracketed : Parser a -> List Action -> Parser a
+completeBracketed (Parser _ model update) actions =
+  Parser (Unescaped "") (List.foldl update model actions) update
 
 cursorPosition : List (Maybe Int) -> List Action
 cursorPosition codes =

@@ -89,10 +89,10 @@ call to `update`.
 -}
 update : String -> Window -> Window
 update str model =
-  List.foldl
-    handleAction
+  Ansi.parseInto
     { model | remainder <- "" }
-    (Ansi.parse (model.remainder ++ str))
+    handleAction
+    (model.remainder ++ str)
 
 handleAction : Ansi.Action -> Window -> Window
 handleAction action model =
