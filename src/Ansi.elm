@@ -92,9 +92,10 @@ parse = List.reverse << parseInto [] (::)
 {-| Update a structure with actions parsed out of the given string.
 -}
 parseInto : a -> (Action -> a -> a) -> String -> a
-parseInto model update =
-  completeParsing <<
-    String.foldl parseChar (emptyParser model update)
+parseInto model update ansi =
+  completeParsing <|
+    List.foldl parseChar (emptyParser model update) <|
+      String.split "" ansi
 
 completeParsing : Parser a -> a
 completeParsing parser =
@@ -121,80 +122,82 @@ encodeCode code =
     Nothing -> ""
     Just num -> toString num
 
-parseChar : Char -> Parser a -> Parser a
+parseChar : String -> Parser a -> Parser a
 parseChar char parser =
   case parser of
     Parser (Unescaped str) model update ->
       case char of
-        '\r' ->
+        "\r" ->
           Parser (Unescaped "") (update CarriageReturn (completeUnescaped parser)) update
-        '\n' ->
+        "\n" ->
           Parser (Unescaped "") (update Linebreak (completeUnescaped parser)) update
-        '\x1b' ->
+        "\x1b" ->
           Parser Escaped (completeUnescaped parser) update
         _ ->
-          Parser (Unescaped (str ++ String.fromChar char)) model update
+          Parser (Unescaped (str ++ char)) model update
 
     Parser Escaped model update ->
       case char of
-        '[' ->
+        "[" ->
           Parser (CSI [] Nothing) model update
         _ ->
-          Parser (Unescaped (String.fromChar char)) model update
+          Parser (Unescaped char) model update
 
     Parser (CSI codes currentCode) model update ->
       case char of
-        'm' ->
+        "m" ->
           completeBracketed parser <|
             List.concatMap
               (codeActions << Maybe.withDefault 0)
               (codes ++ [currentCode])
 
-        'A' ->
+        "A" ->
           completeBracketed parser
             [CursorUp (Maybe.withDefault 1 currentCode)]
 
-        'B' ->
+        "B" ->
           completeBracketed parser
             [CursorDown (Maybe.withDefault 1 currentCode)]
 
-        'C' ->
+        "C" ->
           completeBracketed parser
             [CursorForward (Maybe.withDefault 1 currentCode)]
 
-        'D' ->
+        "D" ->
           completeBracketed parser
             [CursorBack (Maybe.withDefault 1 currentCode)]
 
-        'H' ->
+        "H" ->
           completeBracketed parser <|
             cursorPosition (codes ++ [currentCode])
 
-        'J' ->
+        "J" ->
           completeBracketed parser
             [EraseDisplay (eraseMode (Maybe.withDefault 0 currentCode))]
 
-        'K' ->
+        "K" ->
           completeBracketed parser
             [EraseLine (eraseMode (Maybe.withDefault 0 currentCode))]
 
-        'f' ->
+        "f" ->
           completeBracketed parser <|
             cursorPosition (codes ++ [currentCode])
 
-        's' ->
+        "s" ->
           completeBracketed parser [SaveCursorPosition]
 
-        'u' ->
+        "u" ->
           completeBracketed parser [RestoreCursorPosition]
 
-        ';' ->
+        ";" ->
           Parser (CSI (codes ++ [currentCode]) Nothing) model update
 
         c ->
-          if Char.isDigit c
-            then Parser (CSI codes (Just ((Maybe.withDefault 0 currentCode * 10) + (Char.toCode c - 48)))) model update
-            else completeBracketed parser []
+          case String.toInt c of
+            Ok num ->
+              Parser (CSI codes (Just ((Maybe.withDefault 0 currentCode * 10) + num))) model update
+            Err _ ->
+              completeBracketed parser []
 
 
 completeUnescaped : Parser a -> a
