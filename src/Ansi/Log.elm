@@ -61,7 +61,7 @@ type alias CursorPosition =
 
 moveCursor : Int -> Int -> CursorPosition -> CursorPosition
 moveCursor r c pos =
-  { pos | row <- pos.row + r, column <- pos.column + c }
+  { pos | row = pos.row + r, column = pos.column + c }
 
 {-| Construct an empty model.
 -}
@@ -90,7 +90,7 @@ call to `update`.
 update : String -> Window -> Window
 update str model =
   Ansi.parseInto
-    { model | remainder <- "" }
+    { model | remainder = "" }
     handleAction
     (model.remainder ++ str)
 
@@ -103,38 +103,38 @@ handleAction action model =
         lineToChange = Maybe.withDefault [] (Array.get (model.position.row) model.lines)
         line = writeChunk model.position.column chunk lineToChange
       in
-        { model | lines <- setLine model.position.row line model.lines
-                , position <- moveCursor 0 (String.length s) model.position }
+        { model | lines = setLine model.position.row line model.lines
+                , position = moveCursor 0 (String.length s) model.position }
 
     Ansi.CarriageReturn ->
-      { model | position <- CursorPosition model.position.row 0 }
+      { model | position = CursorPosition model.position.row 0 }
 
     Ansi.Linebreak ->
-      { model | position <- moveCursor 1 0 model.position }
+      { model | position = moveCursor 1 0 model.position }
 
     Ansi.Remainder s ->
-      { model | remainder <- s }
+      { model | remainder = s }
 
     Ansi.CursorUp num ->
-      { model | position <- moveCursor (-num) 0 model.position }
+      { model | position = moveCursor (-num) 0 model.position }
 
     Ansi.CursorDown num ->
-      { model | position <- moveCursor num 0 model.position }
+      { model | position = moveCursor num 0 model.position }
 
     Ansi.CursorForward num ->
-      { model | position <- moveCursor 0 num model.position }
+      { model | position = moveCursor 0 num model.position }
 
     Ansi.CursorBack num ->
-      { model | position <- moveCursor 0 (-num) model.position }
+      { model | position = moveCursor 0 (-num) model.position }
 
     Ansi.CursorPosition row col ->
-      { model | position <- CursorPosition (row - 1) (col - 1) }
+      { model | position = CursorPosition (row - 1) (col - 1) }
 
     Ansi.SaveCursorPosition ->
-      { model | savedPosition <- Just model.position }
+      { model | savedPosition = Just model.position }
 
     Ansi.RestoreCursorPosition ->
-      { model | position <- Maybe.withDefault model.position model.savedPosition }
+      { model | position = Maybe.withDefault model.position model.savedPosition }
 
     Ansi.EraseLine mode ->
       case mode of
@@ -144,20 +144,20 @@ handleAction action model =
             lineToChange = Maybe.withDefault [] (Array.get (model.position.row) model.lines)
             line = writeChunk 0 chunk lineToChange
           in
-            { model | lines <- setLine model.position.row line model.lines }
+            { model | lines = setLine model.position.row line model.lines }
 
         Ansi.EraseToEnd ->
           let
             lineToChange = Maybe.withDefault [] (Array.get (model.position.row) model.lines)
             line = takeLen model.position.column lineToChange
           in
-            { model | lines <- setLine model.position.row line model.lines }
+            { model | lines = setLine model.position.row line model.lines }
 
         Ansi.EraseAll ->
-          { model | lines <- setLine model.position.row [] model.lines }
+          { model | lines = setLine model.position.row [] model.lines }
 
     _ ->
-      { model | style <- updateStyle action model.style }
+      { model | style = updateStyle action model.style }
 
 setLine : Int -> Line -> Array Line -> Array Line
 setLine row line lines =
@@ -178,25 +178,25 @@ updateStyle : Ansi.Action -> Style -> Style
 updateStyle action style =
   case action of
     Ansi.SetForeground mc ->
-      { style | foreground <- mc }
+      { style | foreground = mc }
 
     Ansi.SetBackground mc ->
-      { style | background <- mc }
+      { style | background = mc }
 
     Ansi.SetInverted b ->
-      { style | inverted <- b }
+      { style | inverted = b }
 
     Ansi.SetBold b ->
-      { style | bold <- b }
+      { style | bold = b }
 
     Ansi.SetFaint b ->
-      { style | faint <- b }
+      { style | faint = b }
 
     Ansi.SetItalic b ->
-      { style | italic <- b }
+      { style | italic = b }
 
     Ansi.SetUnderline b ->
-      { style | underline <- b }
+      { style | underline = b }
 
     _ ->
       style
@@ -223,7 +223,7 @@ dropLen len line =
           chunkLen = String.length lc.text
       in
         if chunkLen > len
-           then { lc | text <- String.dropLeft len lc.text } :: lcs
+           then { lc | text = String.dropLeft len lc.text } :: lcs
            else dropLen (len - chunkLen) lcs
 
     [] -> []
@@ -240,7 +240,7 @@ takeLen len line =
         in
           if chunkLen < len
              then lc :: takeLen (len - chunkLen) lcs
-             else [{ lc | text <- String.left len lc.text }]
+             else [{ lc | text = String.left len lc.text }]
 
       [] -> []
 

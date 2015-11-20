@@ -1,5 +1,5 @@
 {
-    "version": "2.1.1",
+    "version": "2.1.2",
     "summary": "Parsing streams of text with ANSI escape sequences",
     "repository": "https://github.com/vito/elm-ansi.git",
     "license": "Apache-2.0",
@@ -12,8 +12,8 @@
     ],
     "dependencies": {
         "deadfoxygrandpa/elm-test": "2.0.0 <= v < 3.0.0",
-        "elm-lang/core": "2.1.0 <= v < 3.0.0",
+        "elm-lang/core": "3.0.0 <= v < 4.0.0",
         "laszlopandy/elm-console": "1.0.2 <= v < 2.0.0"
     },
-    "elm-version": "0.15.1 <= v < 0.16.0"
+    "elm-version": "0.16.0 <= v < 0.17.0"
 }

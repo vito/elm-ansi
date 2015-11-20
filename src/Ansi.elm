@@ -209,6 +209,10 @@ completeUnescaped parser =
     Parser (Unescaped str) model update ->
       update (Print str) model
 
+    -- should be impossible
+    Parser _ model _ ->
+      model
+
 completeBracketed : Parser a -> List Action -> Parser a
 completeBracketed (Parser _ model update) actions =
   Parser (Unescaped "") (List.foldl update model actions) update
