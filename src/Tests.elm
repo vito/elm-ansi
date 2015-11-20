@@ -1,8 +1,7 @@
 module Tests where
 
 import Array
-import ElmTest.Test exposing (..)
-import ElmTest.Assertion exposing (..)
+import ElmTest exposing (..)
 import Regex
 import String
 
