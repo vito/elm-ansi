@@ -38,6 +38,7 @@ type Action
   | CursorForward Int
   | CursorBack Int
   | CursorPosition Int Int
+  | CursorColumn Int
   | EraseDisplay EraseMode
   | EraseLine EraseMode
   | SaveCursorPosition
@@ -166,6 +167,18 @@ parseChar char parser =
         "D" ->
           completeBracketed parser
             [CursorBack (Maybe.withDefault 1 currentCode)]
+
+        "E" ->
+          completeBracketed parser
+            [CursorDown (Maybe.withDefault 1 currentCode), CursorColumn 0]
+
+        "F" ->
+          completeBracketed parser
+            [CursorUp (Maybe.withDefault 1 currentCode), CursorColumn 0]
+
+        "G" ->
+          completeBracketed parser
+            [CursorColumn (Maybe.withDefault 0 currentCode)]
 
         "H" ->
           completeBracketed parser <|

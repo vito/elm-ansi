@@ -110,6 +110,27 @@ parsing =
           , Ansi.CursorPosition 50 50
           ]
           (Ansi.parse "\x1b[5A\x1b[50A\x1b[A\x1b[5B\x1b[50B\x1b[B\x1b[5C\x1b[50C\x1b[C\x1b[5D\x1b[50D\x1b[D\x1b[;50H\x1b[50;H\x1b[H\x1b[;H\x1b[50;50H\x1b[;50f\x1b[50;f\x1b[f\x1b[;f\x1b[50;50f")
+    , test "cursor movement (not ANSI.SYS)" <|
+        assertEqual
+          [ Ansi.CursorDown 1
+          , Ansi.CursorColumn 0
+          , Ansi.CursorDown 5
+          , Ansi.CursorColumn 0
+          , Ansi.CursorDown 50
+          , Ansi.CursorColumn 0
+          , Ansi.CursorUp 1
+          , Ansi.CursorColumn 0
+          , Ansi.CursorUp 5
+          , Ansi.CursorColumn 0
+          , Ansi.CursorUp 50
+          , Ansi.CursorColumn 0
+          , Ansi.CursorColumn 0
+          , Ansi.CursorColumn 0
+          , Ansi.CursorColumn 1
+          , Ansi.CursorColumn 5
+          , Ansi.CursorColumn 50
+          ]
+          (Ansi.parse "\x1b[E\x1b[5E\x1b[50E\x1b[F\x1b[5F\x1b[50F\x1b[G\x1b[0G\x1b[1G\x1b[5G\x1b[50G")
     , test "cursor position save/restore" <|
         assertEqual
           [ Ansi.SaveCursorPosition
@@ -247,6 +268,14 @@ log =
           , "\x1b[CE"
           , "\x1b[B"
           , "\x1b[5D!!"
+          ]
+    , test "cursor movement (not ANSI.SYS)" <|
+        assertWindowRendersAs
+          "\x1b[0mONE\r\n\x1b[0mtwo\r\n\x1b[0mx\x1b[0my\x1b[0mree\r\n\x1b[0mfour\r\n\x1b[0mxyz"
+          [ "one\r\ntwo\r\nthree\r\nfour\r\nxyz\r"
+          , "\x1b[4FONE"
+          , "\x1b[2Ex"
+          , "\x1b[1Gy"
           ]
     , test "setting the cursor position" <|
         assertWindowRendersAs

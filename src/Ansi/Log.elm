@@ -130,6 +130,9 @@ handleAction action model =
     Ansi.CursorPosition row col ->
       { model | position = CursorPosition (row - 1) (col - 1) }
 
+    Ansi.CursorColumn col ->
+      { model | position = CursorPosition model.position.row col }
+
     Ansi.SaveCursorPosition ->
       { model | savedPosition = Just model.position }
 
