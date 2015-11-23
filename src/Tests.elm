@@ -175,10 +175,10 @@ parsing =
           (Ansi.parse "foo\x1b[1Zbar")
     ]
 
-assertWindowRendersAs : String -> List String -> Assertion
-assertWindowRendersAs rendered updates =
+assertWindowRendersAs : Ansi.Log.LineDiscipline -> String -> List String -> Assertion
+assertWindowRendersAs ldisc rendered updates =
   let
-    window = List.foldl Ansi.Log.update Ansi.Log.init updates
+    window = List.foldl Ansi.Log.update (Ansi.Log.init ldisc) updates
   in
     assertEqual (esc rendered) (esc <| renderWindow window)
 
@@ -238,29 +238,33 @@ log : Test
 log =
   suite "Log"
     [ test "basic printing" <|
-        assertWindowRendersAs "\x1b[0mx" ["x"]
+        assertWindowRendersAs Ansi.Log.Raw "\x1b[0mx" ["x"]
     , test "colors" <|
-        assertWindowRendersAs
+        assertWindowRendersAs Ansi.Log.Raw
           "\x1b[0m\x1b[31mred\x1b[0m\x1b[31m\x1b[41mred bg"
           ["\x1b[31mred\x1b[41mred bg"]
     , test "text styling" <|
-        assertWindowRendersAs
+        assertWindowRendersAs Ansi.Log.Raw
           "\x1b[0mnormal\x1b[0m\x1b[1mbold\x1b[0m\x1b[1m\x1b[2mfaint\x1b[0m\x1b[1m\x1b[2m\x1b[3mitalic\x1b[0m\x1b[1m\x1b[2m\x1b[3m\x1b[4munderline\x1b[0m\x1b[1m\x1b[2m\x1b[3m\x1b[4m\x1b[7minverted"
           ["normal\x1b[1mbold\x1b[2mfaint\x1b[3mitalic\x1b[4munderline\x1b[7minverted"]
     , test "line overwriting" <|
-        assertWindowRendersAs
+        assertWindowRendersAs Ansi.Log.Raw
           "\x1b[0m\x1b[31mred\x1b[0m baz"
           ["foo\rbar baz\r\x1b[31mred"]
-    , test "new lines" <|
-        assertWindowRendersAs
+    , test "new lines in raw mode" <|
+        assertWindowRendersAs Ansi.Log.Raw
           "\x1b[0m\x1b[41mfoo\r\n\x1b[0m\x1b[41m   \x1b[0m\x1b[41mbar baz"
           ["\x1b[41mfoo\nbar baz"]
+    , test "new lines in cooked mode" <|
+        assertWindowRendersAs Ansi.Log.Cooked
+          "\x1b[0m\x1b[41mfoo\r\n\x1b[0m\x1b[41mbar baz"
+          ["\x1b[41mfoo\nbar baz"]
     , test "ansi escapes on boundaries" <|
-        assertWindowRendersAs
+        assertWindowRendersAs Ansi.Log.Raw
           "\x1b[0m\x1b[41mfoo\x1b[0m\x1b[31m\x1b[41mbar baz"
           ["\x1b[4", "1mfoo", "\x1b", "[31mbar baz"]
     , test "cursor movement" <|
-        assertWindowRendersAs
+        assertWindowRendersAs Ansi.Log.Raw
           "\x1b[0mONE\r\n\x1b[0mtwo\r\n\x1b[0mthr\x1b[0mx\x1b[0me\x1b[0mE\r\n\x1b[0mf\x1b[0m!!\x1b[0mr\r\n\x1b[0mxyz"
           [ "one\r\ntwo\r\nthree\r\nfour\r\nxyz\r"
           , "\x1b[4AONE"
@@ -270,7 +274,7 @@ log =
           , "\x1b[5D!!"
           ]
     , test "cursor movement (not ANSI.SYS)" <|
-        assertWindowRendersAs
+        assertWindowRendersAs Ansi.Log.Raw
           "\x1b[0mONE\r\n\x1b[0mtwo\r\n\x1b[0mx\x1b[0my\x1b[0mree\r\n\x1b[0mfour\r\n\x1b[0mxyz"
           [ "one\r\ntwo\r\nthree\r\nfour\r\nxyz\r"
           , "\x1b[4FONE"
@@ -278,20 +282,20 @@ log =
           , "\x1b[1Gy"
           ]
     , test "setting the cursor position" <|
-        assertWindowRendersAs
+        assertWindowRendersAs Ansi.Log.Raw
           "\x1b[0mone\r\n\x1b[0mtwo\r\n\x1b[0mt\x1b[0mHR\x1b[0mee\r\n\x1b[0mf\x1b[0mOU\x1b[0mr\r\n\x1b[0mxyz"
           [ "one\r\ntwo\r\nthree\r\nfour\r\nxyz\r"
           , "\x1b[3;2HHR"
           , "\x1b[4;2fOU"
           ]
     , test "saving and restoring the cursor position" <|
-        assertWindowRendersAs
+        assertWindowRendersAs Ansi.Log.Raw
           "\x1b[0mone\r\n\x1b[0mtwo\r\n\x1b[0mt\x1b[0mHR\x1b[0mee\r\n\x1b[0mfour\r\n\x1b[0mxyz"
           [ "one\r\ntwo\r\nt\x1b[shree\r\nfour\r\nxyz\r"
           , "\x1b[uHR"
           ]
     , test "erasing line contents" <|
-        assertWindowRendersAs
+        assertWindowRendersAs Ansi.Log.Raw
           "\x1b[0mone\x1b[0mTWO\r\n\x1b[0m   \x1b[0mTWO\r\n\x1b[0m      \x1b[0mTHREEFOUR"
           [ "onetwenty\x1b[6D\x1b[KTWO\r\n"
           , "onetwo\x1b[3D\x1b[1KTWO\r\n"

@@ -1,10 +1,10 @@
-module Ansi.Log (Window, Line, Chunk, CursorPosition, Style, init, update) where
+module Ansi.Log (Window, LineDiscipline(..), Line, Chunk, CursorPosition, Style, init, update) where
 
 {-| Log interprets a stream of text and ANSI escape codes.
 
 @docs init, update
 
-@docs Window, Line, Chunk, CursorPosition, Style
+@docs Window, LineDiscipline, Line, Chunk, CursorPosition, Style
 -}
 
 import Array exposing (Array)
@@ -22,7 +22,8 @@ via `update`.
   segment from the stream
 -}
 type alias Window =
-  { lines : Array Line
+  { lineDiscipline : LineDiscipline
+  , lines : Array Line
   , position : CursorPosition
   , savedPosition : Maybe CursorPosition
   , style : Style
@@ -59,15 +60,23 @@ type alias CursorPosition =
   , column : Int
   }
 
-moveCursor : Int -> Int -> CursorPosition -> CursorPosition
-moveCursor r c pos =
-  { pos | row = pos.row + r, column = pos.column + c }
+{-| How to interpret linebreaks.
+
+* `Raw`: interpret `\n` as just `\n`, i.e. move down a line, retaining the
+  cursor column
+* `Cooked`: interpret `\n` as `\r\n`, i.e. move down a line and go to the first
+  column
+-}
+type LineDiscipline
+  = Raw
+  | Cooked
 
 {-| Construct an empty model.
 -}
-init : Window
-init =
-  { lines = Array.empty
+init : LineDiscipline -> Window
+init ldisc =
+  { lineDiscipline = ldisc
+  , lines = Array.empty
   , position = { row = 0, column = 0 }
   , savedPosition = Nothing
   , style =
@@ -110,7 +119,12 @@ handleAction action model =
       { model | position = CursorPosition model.position.row 0 }
 
     Ansi.Linebreak ->
-      { model | position = moveCursor 1 0 model.position }
+      case model.lineDiscipline of
+        Raw ->
+          { model | position = moveCursor 1 0 model.position }
+
+        Cooked ->
+          { model | position = CursorPosition (model.position.row + 1) 0 }
 
     Ansi.Remainder s ->
       { model | remainder = s }
@@ -161,6 +175,10 @@ handleAction action model =
 
     _ ->
       { model | style = updateStyle action model.style }
+
+moveCursor : Int -> Int -> CursorPosition -> CursorPosition
+moveCursor r c pos =
+  { pos | row = pos.row + r, column = pos.column + c }
 
 setLine : Int -> Line -> Array Line -> Array Line
 setLine row line lines =
