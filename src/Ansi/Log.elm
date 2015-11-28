@@ -109,10 +109,9 @@ handleAction action model =
     Ansi.Print s ->
       let
         chunk = Chunk s model.style
-        lineToChange = Maybe.withDefault [] (Array.get (model.position.row) model.lines)
-        line = writeChunk model.position.column chunk lineToChange
+        update = writeChunk model.position.column chunk
       in
-        { model | lines = setLine model.position.row line model.lines
+        { model | lines = updateLine model.position.row update model.lines
                 , position = moveCursor 0 (String.length s) model.position }
 
     Ansi.CarriageReturn ->
@@ -158,20 +157,18 @@ handleAction action model =
         Ansi.EraseToBeginning ->
           let
             chunk = Chunk (String.repeat model.position.column " ") model.style
-            lineToChange = Maybe.withDefault [] (Array.get (model.position.row) model.lines)
-            line = writeChunk 0 chunk lineToChange
+            update = writeChunk 0 chunk
           in
-            { model | lines = setLine model.position.row line model.lines }
+            { model | lines = updateLine model.position.row update model.lines }
 
         Ansi.EraseToEnd ->
           let
-            lineToChange = Maybe.withDefault [] (Array.get (model.position.row) model.lines)
-            line = takeLen model.position.column lineToChange
+            update = takeLen model.position.column
           in
-            { model | lines = setLine model.position.row line model.lines }
+            { model | lines = updateLine model.position.row update model.lines }
 
         Ansi.EraseAll ->
-          { model | lines = setLine model.position.row [] model.lines }
+          { model | lines = updateLine model.position.row (always []) model.lines }
 
     _ ->
       { model | style = updateStyle action model.style }
@@ -180,10 +177,11 @@ moveCursor : Int -> Int -> CursorPosition -> CursorPosition
 moveCursor r c pos =
   { pos | row = pos.row + r, column = pos.column + c }
 
-setLine : Int -> Line -> Array Line -> Array Line
-setLine row line lines =
+updateLine : Int -> (Line -> Line) -> Array Line -> Array Line
+updateLine row update lines =
   let
     currentLines = Array.length lines
+    line = update <| Maybe.withDefault [] (Array.get row lines)
   in
     if row + 1 > currentLines
       then appendLine (row - currentLines) line lines
