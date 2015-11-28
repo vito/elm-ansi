@@ -118,12 +118,13 @@ handleAction action model =
       { model | position = CursorPosition model.position.row 0 }
 
     Ansi.Linebreak ->
-      case model.lineDiscipline of
-        Raw ->
-          { model | position = moveCursor 1 0 model.position }
+      handleAction (Ansi.Print "") <|
+        case model.lineDiscipline of
+          Raw ->
+            { model | position = moveCursor 1 0 model.position }
 
-        Cooked ->
-          { model | position = CursorPosition (model.position.row + 1) 0 }
+          Cooked ->
+            { model | position = CursorPosition (model.position.row + 1) 0 }
 
     Ansi.Remainder s ->
       { model | remainder = s }

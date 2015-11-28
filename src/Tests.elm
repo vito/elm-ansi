@@ -253,12 +253,12 @@ log =
           ["foo\rbar baz\r\x1b[31mred"]
     , test "new lines in raw mode" <|
         assertWindowRendersAs Ansi.Log.Raw
-          "\x1b[0m\x1b[41mfoo\r\n\x1b[0m\x1b[41m   \x1b[0m\x1b[41mbar baz"
-          ["\x1b[41mfoo\nbar baz"]
+          "\x1b[0m\x1b[41mfoo\r\n\x1b[0m\x1b[41m   \x1b[0m\x1b[41mbar baz\r\n\x1b[0m\x1b[41m          \x1b[0m\x1b[41m"
+          ["\x1b[41mfoo\nbar baz\n"]
     , test "new lines in cooked mode" <|
         assertWindowRendersAs Ansi.Log.Cooked
-          "\x1b[0m\x1b[41mfoo\r\n\x1b[0m\x1b[41mbar baz"
-          ["\x1b[41mfoo\nbar baz"]
+          "\x1b[0m\x1b[41mfoo\r\n\x1b[0m\x1b[41mbar baz\r\n\x1b[0m\x1b[41m"
+          ["\x1b[41mfoo\nbar baz\n"]
     , test "ansi escapes on boundaries" <|
         assertWindowRendersAs Ansi.Log.Raw
           "\x1b[0m\x1b[41mfoo\x1b[0m\x1b[31m\x1b[41mbar baz"
@@ -296,7 +296,7 @@ log =
           ]
     , test "erasing line contents" <|
         assertWindowRendersAs Ansi.Log.Raw
-          "\x1b[0mone\x1b[0mTWO\r\n\x1b[0m   \x1b[0mTWO\r\n\x1b[0m      \x1b[0mTHREEFOUR"
+          "\x1b[0mone\x1b[0mTWO\r\n\x1b[0m   \x1b[0mTWO\r\n\x1b[0m      \x1b[0mTHREEFOUR\r\n\x1b[0m"
           [ "onetwenty\x1b[6D\x1b[KTWO\r\n"
           , "onetwo\x1b[3D\x1b[1KTWO\r\n"
           , "onetwo\x1b[2KTHREEFOUR\r\n"
