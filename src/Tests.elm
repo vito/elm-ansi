@@ -185,7 +185,7 @@ assertWindowRendersAs ldisc rendered updates =
 esc : String -> String
 esc = Regex.replace Regex.All (Regex.regex "\x1b") (always "\\e")
 
-renderWindow : Ansi.Log.Window -> String
+renderWindow : Ansi.Log.Model -> String
 renderWindow window =
   String.join "\r\n" (Array.toList (Array.map renderLine window.lines))
 

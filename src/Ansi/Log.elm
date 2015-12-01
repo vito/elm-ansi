@@ -1,18 +1,21 @@
-module Ansi.Log (Window, LineDiscipline(..), Line, Chunk, CursorPosition, Style, init, update) where
+module Ansi.Log (Model, LineDiscipline(..), Line, Chunk, CursorPosition, Style, init, update, view) where
 
 {-| Log interprets a stream of text and ANSI escape codes.
 
-@docs init, update
+@docs init, update, view
 
-@docs Window, LineDiscipline, Line, Chunk, CursorPosition, Style
+@docs Model, LineDiscipline, Line, Chunk, CursorPosition, Style
 -}
 
 import Array exposing (Array)
+import Html
+import Html.Attributes
+import Html.Lazy
 import String
 
 import Ansi
 
-{-| Window is populated by parsing ANSI character sequences and escape codes
+{-| Model is populated by parsing ANSI character sequences and escape codes
 via `update`.
 
 * `lines` contains all of the output that's been parsed
@@ -21,7 +24,7 @@ via `update`.
 * `remainder` is a partial ANSI escape sequence left around from an incomplete
   segment from the stream
 -}
-type alias Window =
+type alias Model =
   { lineDiscipline : LineDiscipline
   , lines : Array Line
   , position : CursorPosition
@@ -73,7 +76,7 @@ type LineDiscipline
 
 {-| Construct an empty model.
 -}
-init : LineDiscipline -> Window
+init : LineDiscipline -> Model
 init ldisc =
   { lineDiscipline = ldisc
   , lines = Array.empty
@@ -96,14 +99,14 @@ init ldisc =
 Trailing partial ANSI escape codes will be prepended to the chunk in the next
 call to `update`.
 -}
-update : String -> Window -> Window
+update : String -> Model -> Model
 update str model =
   Ansi.parseInto
     { model | remainder = "" }
     handleAction
     (model.remainder ++ str)
 
-handleAction : Ansi.Action -> Window -> Window
+handleAction : Ansi.Action -> Model -> Model
 handleAction action model =
   case action of
     Ansi.Print s ->
@@ -269,3 +272,102 @@ lineLen line =
   case line of
     [] -> 0
     c :: cs -> String.length c.text + lineLen cs
+
+{-| Render the model's logs as HTML.
+
+Wraps everything in <pre>, with a <div> for each Line, and <span> with styling
+and classes for each Chunk.
+
+The `span` elements will have the following attributes:
+
+* `style="font-weight: bold|normal"`
+* `class="ansi-COLOR-fg ansi-COLOR-bg ansi-bold"`
+
+...where each class is optional, and `COLOR` is one of:
+
+* `black`
+* `red`
+* `green`
+* `yellow`
+* `blue`
+* `magenta`
+* `cyan`
+* `white`
+* `bright-black`
+* `bright-red`
+* `bright-green`
+* `bright-yellow`
+* `bright-blue`
+* `bright-magenta`
+* `bright-cyan`
+* `bright-white`
+
+If the chunk is inverted, the `-fg` and `-bg` classes will have their colors
+swapped. If the chunk is bold, the `ansi-bold` class will be present.
+-}
+view : Model -> Html.Html
+view model =
+  Html.pre []
+    (Array.toList (Array.map lazyLine model.lines))
+
+lazyLine : Line -> Html.Html
+lazyLine = Html.Lazy.lazy viewLine
+
+viewLine : Line -> Html.Html
+viewLine line =
+  Html.div [] (List.map viewChunk line)
+
+viewChunk : Chunk -> Html.Html
+viewChunk chunk =
+  Html.span (styleAttributes chunk.style)
+    [Html.text chunk.text]
+
+styleAttributes : Style -> List Html.Attribute
+styleAttributes style =
+  [ Html.Attributes.style [("font-weight", if style.bold then "bold" else "normal")]
+  , let
+      fgClasses =
+        colorClasses "-fg"
+          style.bold
+          (if not style.inverted then style.foreground else style.background)
+      bgClasses =
+        colorClasses "-bg"
+          style.bold
+          (if not style.inverted then style.background else style.foreground)
+    in
+      Html.Attributes.classList (List.map (flip (,) True) (fgClasses ++ bgClasses))
+  ]
+
+colorClasses : String -> Bool -> Maybe Ansi.Color -> List String
+colorClasses suffix bold mc =
+  let
+    brightPrefix = "ansi-bright-"
+
+    prefix =
+      if bold then
+        brightPrefix
+      else
+        "ansi-"
+  in
+    case mc of
+      Nothing ->
+        if bold then
+          ["ansi-bold"]
+        else
+          []
+      Just (Ansi.Black) ->   [prefix ++ "black" ++ suffix]
+      Just (Ansi.Red) ->     [prefix ++ "red" ++ suffix]
+      Just (Ansi.Green) ->   [prefix ++ "green" ++ suffix]
+      Just (Ansi.Yellow) ->  [prefix ++ "yellow" ++ suffix]
+      Just (Ansi.Blue) ->    [prefix ++ "blue" ++ suffix]
+      Just (Ansi.Magenta) -> [prefix ++ "magenta" ++ suffix]
+      Just (Ansi.Cyan) ->    [prefix ++ "cyan" ++ suffix]
+      Just (Ansi.White) ->   [prefix ++ "white" ++ suffix]
+      Just (Ansi.BrightBlack) ->   [brightPrefix ++ "black" ++ suffix]
+      Just (Ansi.BrightRed) ->     [brightPrefix ++ "red" ++ suffix]
+      Just (Ansi.BrightGreen) ->   [brightPrefix ++ "green" ++ suffix]
+      Just (Ansi.BrightYellow) ->  [brightPrefix ++ "yellow" ++ suffix]
+      Just (Ansi.BrightBlue) ->    [brightPrefix ++ "blue" ++ suffix]
+      Just (Ansi.BrightMagenta) -> [brightPrefix ++ "magenta" ++ suffix]
+      Just (Ansi.BrightCyan) ->    [brightPrefix ++ "cyan" ++ suffix]
+      Just (Ansi.BrightWhite) ->   [brightPrefix ++ "white" ++ suffix]
