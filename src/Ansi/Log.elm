@@ -315,7 +315,7 @@ lazyLine = Html.Lazy.lazy viewLine
 
 viewLine : Line -> Html.Html
 viewLine line =
-  Html.div [] (List.map viewChunk line)
+  Html.div [] (List.map viewChunk line ++ [Html.text "\n"])
 
 viewChunk : Chunk -> Html.Html
 viewChunk chunk =
