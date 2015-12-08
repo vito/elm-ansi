@@ -167,7 +167,7 @@ handleAction action model =
 
         Ansi.EraseToEnd ->
           let
-            update = takeLen model.position.column
+            update = takeLen [] model.position.column
           in
             { model | lines = updateLine model.position.row update model.lines }
 
@@ -227,8 +227,9 @@ updateStyle action style =
 writeChunk : Int -> Chunk -> Line -> Line
 writeChunk pos chunk line =
   let
-    chunksBefore = takeLen pos line
-    chunksLen = lineLen chunksBefore
+    chunksBefore = takeLen [] pos line
+    chunksLen = lineLen 0 chunksBefore
+
     before =
       if chunksLen < pos
          then chunksBefore ++ [{ style = chunk.style, text = String.repeat (pos - chunksLen) " " }]
@@ -251,27 +252,27 @@ dropLen len line =
 
     [] -> []
 
-takeLen : Int -> Line -> Line
-takeLen len line =
+takeLen : Line -> Int -> Line -> Line
+takeLen acc len line =
   if len == 0 then
-    []
+    acc
   else
     case line of
       lc :: lcs ->
         let
-            chunkLen = String.length lc.text
+          chunkLen = String.length lc.text
         in
           if chunkLen < len
-             then lc :: takeLen (len - chunkLen) lcs
-             else [{ lc | text = String.left len lc.text }]
+             then takeLen (acc ++ [lc]) (len - chunkLen) lcs
+             else acc ++ [{ lc | text = String.left len lc.text }]
 
-      [] -> []
+      [] -> acc
 
-lineLen : Line -> Int
-lineLen line =
+lineLen : Int -> Line -> Int
+lineLen acc line =
   case line of
-    [] -> 0
-    c :: cs -> String.length c.text + lineLen cs
+    [] -> acc
+    c :: cs -> lineLen (acc + String.length c.text) cs
 
 {-| Render the model's logs as HTML.
 
