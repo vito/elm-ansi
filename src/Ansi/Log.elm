@@ -167,7 +167,7 @@ handleAction action model =
 
         Ansi.EraseToEnd ->
           let
-            update = takeLen [] model.position.column
+            update = takeLen Array.empty model.position.column
           in
             { model | lines = updateLine model.position.row update model.lines }
 
@@ -227,7 +227,7 @@ updateStyle action style =
 writeChunk : Int -> Chunk -> Line -> Line
 writeChunk pos chunk line =
   let
-    chunksBefore = takeLen [] pos line
+    chunksBefore = takeLen Array.empty pos line
     chunksLen = lineLen 0 chunksBefore
 
     before =
@@ -252,10 +252,10 @@ dropLen len line =
 
     [] -> []
 
-takeLen : Line -> Int -> Line -> Line
+takeLen : Array Chunk -> Int -> Line -> Line
 takeLen acc len line =
   if len == 0 then
-    acc
+    Array.toList acc
   else
     case line of
       lc :: lcs ->
@@ -263,10 +263,11 @@ takeLen acc len line =
           chunkLen = String.length lc.text
         in
           if chunkLen < len
-             then takeLen (acc ++ [lc]) (len - chunkLen) lcs
-             else acc ++ [{ lc | text = String.left len lc.text }]
+             then takeLen (Array.push lc acc) (len - chunkLen) lcs
+             else Array.toList (Array.push { lc | text = String.left len lc.text } acc)
 
-      [] -> acc
+      [] ->
+        Array.toList acc
 
 lineLen : Int -> Line -> Int
 lineLen acc line =
