@@ -226,6 +226,13 @@ updateStyle action style =
 
 writeChunk : Int -> Chunk -> Line -> Line
 writeChunk pos chunk line =
+  if pos == lineLen 0 line then
+    line ++ [chunk]
+  else
+    insertChunkAt pos chunk line
+
+insertChunkAt : Int -> Chunk -> Line -> Line
+insertChunkAt pos chunk line =
   let
     chunksBefore = takeLen Array.empty pos line
     chunksLen = lineLen 0 chunksBefore
