@@ -35,7 +35,7 @@ type alias Model =
 
 {-| A list of arbitrarily-sized chunks of output.
 -}
-type alias Line = List Chunk
+type alias Line = Array Chunk
 
 {-| A blob of text paired with the style that was configured at the time.
 -}
@@ -106,6 +106,10 @@ update str model =
     handleAction
     (model.remainder ++ str)
 
+blankLine : Line
+blankLine =
+  Array.empty
+
 handleAction : Ansi.Action -> Model -> Model
 handleAction action model =
   case action of
@@ -167,12 +171,12 @@ handleAction action model =
 
         Ansi.EraseToEnd ->
           let
-            update = takeLen Array.empty model.position.column
+            update = takeLen blankLine model.position.column
           in
             { model | lines = updateLine model.position.row update model.lines }
 
         Ansi.EraseAll ->
-          { model | lines = updateLine model.position.row (always []) model.lines }
+          { model | lines = updateLine model.position.row (always blankLine) model.lines }
 
     _ ->
       { model | style = updateStyle action model.style }
@@ -185,7 +189,7 @@ updateLine : Int -> (Line -> Line) -> Array Line -> Array Line
 updateLine row update lines =
   let
     currentLines = Array.length lines
-    line = update <| Maybe.withDefault [] (Array.get row lines)
+    line = update <| Maybe.withDefault blankLine (Array.get row lines)
   in
     if row + 1 > currentLines
       then appendLine (row - currentLines) line lines
@@ -195,7 +199,7 @@ appendLine : Int -> Line -> Array Line -> Array Line
 appendLine after line lines =
   if after == 0
      then Array.push line lines
-     else appendLine (after - 1) line (Array.push [] lines)
+     else appendLine (after - 1) line (Array.push blankLine lines)
 
 updateStyle : Ansi.Action -> Style -> Style
 updateStyle action style =
@@ -226,61 +230,67 @@ updateStyle action style =
 
 writeChunk : Int -> Chunk -> Line -> Line
 writeChunk pos chunk line =
-  if pos == lineLen 0 line then
-    line ++ [chunk]
+  if pos == lineLen line then
+    Array.push chunk line
   else
     insertChunkAt pos chunk line
 
 insertChunkAt : Int -> Chunk -> Line -> Line
 insertChunkAt pos chunk line =
   let
-    chunksBefore = takeLen Array.empty pos line
-    chunksLen = lineLen 0 chunksBefore
+    chunksBefore = takeLen blankLine pos line
+    chunksLen = lineLen chunksBefore
 
     before =
       if chunksLen < pos
-         then chunksBefore ++ [{ style = chunk.style, text = String.repeat (pos - chunksLen) " " }]
+         then Array.push { style = chunk.style, text = String.repeat (pos - chunksLen) " " } chunksBefore
          else chunksBefore
 
     after = dropLen (pos + String.length chunk.text) line
   in
-    before ++ [chunk] ++ after
+    Array.append (Array.push chunk before) after
+
+type alias DropState = (Int, Line)
+
+type alias TakeState = (Int, Line)
 
 dropLen : Int -> Line -> Line
 dropLen len line =
-  case line of
-    lc :: lcs ->
-      let
-          chunkLen = String.length lc.text
-      in
-        if chunkLen > len
-           then { lc | text = String.dropLeft len lc.text } :: lcs
-           else dropLen (len - chunkLen) lcs
+  snd (Array.foldl dropChunk (len, blankLine) line)
 
-    [] -> []
+dropChunk : Chunk -> DropState -> DropState
+dropChunk chunk (toDrop, droppedLine) =
+  if toDrop == 0 then
+    (0, Array.push chunk droppedLine)
+  else
+    let
+      chunkLen = String.length chunk.text
+    in
+      if chunkLen > toDrop then
+        (0, Array.push { chunk | text = String.dropLeft toDrop chunk.text } droppedLine)
+      else
+        (toDrop - chunkLen, droppedLine)
 
 takeLen : Array Chunk -> Int -> Line -> Line
 takeLen acc len line =
-  if len == 0 then
-    Array.toList acc
+  snd (Array.foldl takeChunk (len, blankLine) line)
+
+takeChunk : Chunk -> TakeState -> TakeState
+takeChunk chunk (toTake, takenLine) =
+  if toTake == 0 then
+    (0, takenLine)
   else
-    case line of
-      lc :: lcs ->
-        let
-          chunkLen = String.length lc.text
-        in
-          if chunkLen < len
-             then takeLen (Array.push lc acc) (len - chunkLen) lcs
-             else Array.toList (Array.push { lc | text = String.left len lc.text } acc)
+    let
+      chunkLen = String.length chunk.text
+    in
+      if chunkLen < toTake then
+        (toTake - chunkLen, Array.push chunk takenLine)
+      else
+        (0, Array.push { chunk | text = String.left toTake chunk.text } takenLine)
 
-      [] ->
-        Array.toList acc
-
-lineLen : Int -> Line -> Int
-lineLen acc line =
-  case line of
-    [] -> acc
-    c :: cs -> lineLen (acc + String.length c.text) cs
+lineLen : Line -> Int
+lineLen line =
+  Array.foldl (\chunk acc -> String.length chunk.text + acc) 0 line
 
 {-| Render the model's logs as HTML.
 
@@ -324,7 +334,7 @@ lazyLine = Html.Lazy.lazy viewLine
 
 viewLine : Line -> Html.Html
 viewLine line =
-  Html.div [] (List.map viewChunk line ++ [Html.text "\n"])
+  Html.div [] (Array.toList <| Array.push (Html.text "\n") <| Array.map viewChunk line)
 
 viewChunk : Chunk -> Html.Html
 viewChunk chunk =

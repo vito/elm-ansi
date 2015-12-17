@@ -191,7 +191,7 @@ renderWindow window =
 
 renderLine : Ansi.Log.Line -> String
 renderLine line =
-  String.join "" (List.map renderChunk line)
+  String.join "" (Array.toList <| Array.map renderChunk line)
 
 renderChunk : Ansi.Log.Chunk -> String
 renderChunk chunk =
