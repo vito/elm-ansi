@@ -115,7 +115,7 @@ handleAction action model =
         update = writeChunk model.position.column chunk
       in
         { model | lines = updateLine model.position.row update model.lines
-                , position = moveCursor 0 (String.length s) model.position }
+                , position = moveCursor 0 (chunkLen chunk) model.position }
 
     Ansi.CarriageReturn ->
       { model | position = CursorPosition model.position.row 0 }
@@ -167,7 +167,7 @@ handleAction action model =
 
         Ansi.EraseToEnd ->
           let
-            update = takeLen Array.empty model.position.column
+            update = takeLeft model.position.column
           in
             { model | lines = updateLine model.position.row update model.lines }
 
@@ -224,63 +224,79 @@ updateStyle action style =
     _ ->
       style
 
+lineLen : Line -> Int
+lineLen =
+  List.foldl (\chunk acc -> chunkLen chunk + acc) 0
+
+chunkLen : Chunk -> Int
+chunkLen = String.length << .text
+
 writeChunk : Int -> Chunk -> Line -> Line
 writeChunk pos chunk line =
-  if pos == lineLen 0 line then
-    line ++ [chunk]
-  else
-    insertChunkAt pos chunk line
-
-insertChunkAt : Int -> Chunk -> Line -> Line
-insertChunkAt pos chunk line =
   let
-    chunksBefore = takeLen Array.empty pos line
-    chunksLen = lineLen 0 chunksBefore
-
-    before =
-      if chunksLen < pos
-         then chunksBefore ++ [{ style = chunk.style, text = String.repeat (pos - chunksLen) " " }]
-         else chunksBefore
-
-    after = dropLen (pos + String.length chunk.text) line
+    len = lineLen line
+    afterLen = len - (chunkLen chunk + pos)
+    textChopped = len - pos
   in
-    before ++ [chunk] ++ after
-
-dropLen : Int -> Line -> Line
-dropLen len line =
-  case line of
-    lc :: lcs ->
+    if len == pos then
+      addChunk chunk line
+    else if pos > len then
+      addChunk chunk (spacing chunk.style (pos - len) :: line)
+    else
       let
-          chunkLen = String.length lc.text
+        appended = addChunk chunk (dropRight (len - pos) line)
       in
-        if chunkLen > len
-           then { lc | text = String.dropLeft len lc.text } :: lcs
-           else dropLen (len - chunkLen) lcs
+        if afterLen > 0 then
+          takeRight afterLen line ++ appended
+        else
+          appended
 
-    [] -> []
-
-takeLen : Array Chunk -> Int -> Line -> Line
-takeLen acc len line =
-  if len == 0 then
-    Array.toList acc
+addChunk : Chunk -> Line -> Line
+addChunk chunk line =
+  if chunkLen chunk == 0 then
+    line
   else
-    case line of
-      lc :: lcs ->
-        let
-          chunkLen = String.length lc.text
-        in
-          if chunkLen < len
-             then takeLen (Array.push lc acc) (len - chunkLen) lcs
-             else Array.toList (Array.push { lc | text = String.left len lc.text } acc)
+    chunk :: line
 
-      [] ->
-        Array.toList acc
-
-lineLen : Int -> Line -> Int
-lineLen acc line =
+dropRight : Int -> Line -> Line
+dropRight n line =
   case line of
-    [] -> acc
-    c :: cs -> lineLen (acc + String.length c.text) cs
+    [] ->
+      []
+
+    c :: cs ->
+      let
+        len = chunkLen c
+      in
+        if len <= n then
+          dropRight (n - len) cs
+        else
+          { c | text = String.dropRight n c.text } :: cs
+
+takeRight : Int -> Line -> Line
+takeRight n line =
+  case line of
+    [] ->
+      []
+
+    c :: cs ->
+      let
+        len = chunkLen c
+      in
+        if len < n then
+          c :: takeRight (n - len) cs
+        else if len == n then
+          [c]
+        else
+          [{ c | text = String.right n c.text }]
+
+spacing : Style -> Int -> Chunk
+spacing style len =
+  { style = style, text = String.repeat len " " }
+
+takeLeft : Int -> Line -> Line
+takeLeft n line =
+  dropRight (lineLen line - n) line
 
 {-| Render the model's logs as HTML.
 
@@ -324,7 +340,7 @@ lazyLine = Html.Lazy.lazy viewLine
 
 viewLine : Line -> Html.Html
 viewLine line =
-  Html.div [] (List.map viewChunk line ++ [Html.text "\n"])
+  Html.div [] (List.foldl (\c l -> viewChunk c :: l) [Html.text "\n"] line)
 
 viewChunk : Chunk -> Html.Html
 viewChunk chunk =

@@ -191,7 +191,7 @@ renderWindow window =
 
 renderLine : Ansi.Log.Line -> String
 renderLine line =
-  String.join "" (List.map renderChunk line)
+  String.join "" (List.foldl (\c l -> renderChunk c :: l) [] line)
 
 renderChunk : Ansi.Log.Chunk -> String
 renderChunk chunk =
@@ -239,6 +239,8 @@ log =
   suite "Log"
     [ test "basic printing" <|
         assertWindowRendersAs Ansi.Log.Raw "\x1b[0mx" ["x"]
+    , test "basic printing of multiple chunks" <|
+        assertWindowRendersAs Ansi.Log.Raw "\x1b[0mx\x1b[0my\x1b[0mz" ["x", "y", "z"]
     , test "colors" <|
         assertWindowRendersAs Ansi.Log.Raw
           "\x1b[0m\x1b[31mred\x1b[0m\x1b[31m\x1b[41mred bg"
@@ -253,11 +255,11 @@ log =
           ["foo\rbar baz\r\x1b[31mred"]
     , test "new lines in raw mode" <|
         assertWindowRendersAs Ansi.Log.Raw
-          "\x1b[0m\x1b[41mfoo\r\n\x1b[0m\x1b[41m   \x1b[0m\x1b[41mbar baz\r\n\x1b[0m\x1b[41m          \x1b[0m\x1b[41m"
+          "\x1b[0m\x1b[41mfoo\r\n\x1b[0m\x1b[41m   \x1b[0m\x1b[41mbar baz\r\n\x1b[0m\x1b[41m          "
           ["\x1b[41mfoo\nbar baz\n"]
     , test "new lines in cooked mode" <|
         assertWindowRendersAs Ansi.Log.Cooked
-          "\x1b[0m\x1b[41mfoo\r\n\x1b[0m\x1b[41mbar baz\r\n\x1b[0m\x1b[41m"
+          "\x1b[0m\x1b[41mfoo\r\n\x1b[0m\x1b[41mbar baz\r\n"
           ["\x1b[41mfoo\nbar baz\n"]
     , test "ansi escapes on boundaries" <|
         assertWindowRendersAs Ansi.Log.Raw
@@ -296,7 +298,7 @@ log =
           ]
     , test "erasing line contents" <|
         assertWindowRendersAs Ansi.Log.Raw
-          "\x1b[0mone\x1b[0mTWO\r\n\x1b[0m   \x1b[0mTWO\r\n\x1b[0m      \x1b[0mTHREEFOUR\r\n\x1b[0m"
+          "\x1b[0mone\x1b[0mTWO\r\n\x1b[0m   \x1b[0mTWO\r\n\x1b[0m      \x1b[0mTHREEFOUR\r\n"
           [ "onetwenty\x1b[6D\x1b[KTWO\r\n"
           , "onetwo\x1b[3D\x1b[1KTWO\r\n"
           , "onetwo\x1b[2KTHREEFOUR\r\n"
