@@ -35,7 +35,7 @@ type alias Model =
 
 {-| A list of arbitrarily-sized chunks of output.
 -}
-type alias Line = List Chunk
+type alias Line = (List Chunk, Int)
 
 {-| A blob of text paired with the style that was configured at the time.
 -}
@@ -172,7 +172,7 @@ handleAction action model =
             { model | lines = updateLine model.position.row update model.lines }
 
         Ansi.EraseAll ->
-          { model | lines = updateLine model.position.row (always []) model.lines }
+          { model | lines = updateLine model.position.row (always blankLine) model.lines }
 
     _ ->
       { model | style = updateStyle action model.style }
@@ -185,7 +185,7 @@ updateLine : Int -> (Line -> Line) -> Array Line -> Array Line
 updateLine row update lines =
   let
     currentLines = Array.length lines
-    line = update <| Maybe.withDefault [] (Array.get row lines)
+    line = update <| Maybe.withDefault blankLine (Array.get row lines)
   in
     if row + 1 > currentLines
       then appendLine (row - currentLines) line lines
@@ -195,7 +195,7 @@ appendLine : Int -> Line -> Array Line -> Array Line
 appendLine after line lines =
   if after == 0
      then Array.push line lines
-     else appendLine (after - 1) line (Array.push [] lines)
+     else appendLine (after - 1) line (Array.push blankLine lines)
 
 updateStyle : Ansi.Action -> Style -> Style
 updateStyle action style =
@@ -225,8 +225,7 @@ updateStyle action style =
       style
 
 lineLen : Line -> Int
-lineLen =
-  List.foldl (\chunk acc -> chunkLen chunk + acc) 0
+lineLen = snd
 
 chunkLen : Chunk -> Int
 chunkLen = String.length << .text
@@ -241,62 +240,65 @@ writeChunk pos chunk line =
     if len == pos then
       addChunk chunk line
     else if pos > len then
-      addChunk chunk (spacing chunk.style (pos - len) :: line)
+      addChunk chunk <| addChunk (spacing chunk.style (pos - len)) line
     else
       let
         appended = addChunk chunk (dropRight (len - pos) line)
       in
         if afterLen > 0 then
-          List.foldl addChunk appended (takeRight afterLen line)
+          List.foldl addChunk appended (fst <| takeRight afterLen line)
         else
           appended
 
 addChunk : Chunk -> Line -> Line
 addChunk chunk line =
-  if chunkLen chunk == 0 then
-    line
-  else
-    case line of
-      [] ->
-        [chunk]
+  let
+    clen = chunkLen chunk
+  in
+    if clen == 0 then
+      line
+    else
+      case line of
+        ([], _) ->
+          ([chunk], clen)
 
-      c :: cs ->
-        if c.style == chunk.style then
-          { c | text = String.append c.text chunk.text } :: cs
-        else
-          chunk :: line
+        (c :: cs, llen) ->
+          if c.style == chunk.style then
+            ({ c | text = String.append c.text chunk.text } :: cs, llen + clen)
+          else
+            (chunk :: c :: cs, llen + clen)
 
 dropRight : Int -> Line -> Line
 dropRight n line =
   case line of
-    [] ->
-      []
+    ([], _) ->
+      line
 
-    c :: cs ->
+    (c :: cs, llen) ->
       let
-        len = chunkLen c
+        clen = chunkLen c
       in
-        if len <= n then
-          dropRight (n - len) cs
+        if clen <= n then
+          dropRight (n - clen) (cs, llen - clen)
         else
-          { c | text = String.dropRight n c.text } :: cs
+          ({ c | text = String.dropRight n c.text } :: cs, llen - n)
 
 takeRight : Int -> Line -> Line
 takeRight n line =
   case line of
-    [] ->
-      []
+    ([], _) ->
+      line
 
-    c :: cs ->
+    (c :: cs, llen) ->
       let
-        len = chunkLen c
+        clen = chunkLen c
       in
-        if len < n then
-          c :: takeRight (n - len) cs
-        else if len == n then
-          [c]
+        if clen < n then
+          addChunk c (takeRight (n - clen) (cs, llen - clen))
+        else if clen == n then
+          ([c], clen)
         else
-          [{ c | text = String.right n c.text }]
+          ([{ c | text = String.right n c.text }], n)
 
 spacing : Style -> Int -> Chunk
 spacing style len =
@@ -305,6 +307,10 @@ spacing style len =
 takeLeft : Int -> Line -> Line
 takeLeft n line =
   dropRight (lineLen line - n) line
+
+blankLine : Line
+blankLine =
+  ([], 0)
 
 {-| Render the model's logs as HTML.
 
@@ -347,8 +353,8 @@ lazyLine : Line -> Html.Html
 lazyLine = Html.Lazy.lazy viewLine
 
 viewLine : Line -> Html.Html
-viewLine line =
-  Html.div [] (List.foldl (\c l -> viewChunk c :: l) [Html.text "\n"] line)
+viewLine (chunks, _) =
+  Html.div [] (List.foldl (\c l -> viewChunk c :: l) [Html.text "\n"] chunks)
 
 viewChunk : Chunk -> Html.Html
 viewChunk chunk =

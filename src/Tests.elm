@@ -190,8 +190,8 @@ renderWindow window =
   String.join "\r\n" (Array.toList (Array.map renderLine window.lines))
 
 renderLine : Ansi.Log.Line -> String
-renderLine line =
-  String.join "" (List.foldl (\c l -> renderChunk c :: l) [] line)
+renderLine (chunks, _) =
+  String.join "" (List.foldl (\c l -> renderChunk c :: l) [] chunks)
 
 renderChunk : Ansi.Log.Chunk -> String
 renderChunk chunk =
