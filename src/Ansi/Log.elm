@@ -247,7 +247,7 @@ writeChunk pos chunk line =
         appended = addChunk chunk (dropRight (len - pos) line)
       in
         if afterLen > 0 then
-          takeRight afterLen line ++ appended
+          List.foldl addChunk appended (takeRight afterLen line)
         else
           appended
 
@@ -256,7 +256,15 @@ addChunk chunk line =
   if chunkLen chunk == 0 then
     line
   else
-    chunk :: line
+    case line of
+      [] ->
+        [chunk]
+
+      c :: cs ->
+        if c.style == chunk.style then
+          { c | text = String.append c.text chunk.text } :: cs
+        else
+          chunk :: line
 
 dropRight : Int -> Line -> Line
 dropRight n line =

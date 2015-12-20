@@ -240,7 +240,7 @@ log =
     [ test "basic printing" <|
         assertWindowRendersAs Ansi.Log.Raw "\x1b[0mx" ["x"]
     , test "basic printing of multiple chunks" <|
-        assertWindowRendersAs Ansi.Log.Raw "\x1b[0mx\x1b[0my\x1b[0mz" ["x", "y", "z"]
+        assertWindowRendersAs Ansi.Log.Raw "\x1b[0mxyz" ["x", "y", "z"]
     , test "colors" <|
         assertWindowRendersAs Ansi.Log.Raw
           "\x1b[0m\x1b[31mred\x1b[0m\x1b[31m\x1b[41mred bg"
@@ -255,7 +255,7 @@ log =
           ["foo\rbar baz\r\x1b[31mred"]
     , test "new lines in raw mode" <|
         assertWindowRendersAs Ansi.Log.Raw
-          "\x1b[0m\x1b[41mfoo\r\n\x1b[0m\x1b[41m   \x1b[0m\x1b[41mbar baz\r\n\x1b[0m\x1b[41m          "
+          "\x1b[0m\x1b[41mfoo\r\n\x1b[0m\x1b[41m   bar baz\r\n\x1b[0m\x1b[41m          "
           ["\x1b[41mfoo\nbar baz\n"]
     , test "new lines in cooked mode" <|
         assertWindowRendersAs Ansi.Log.Cooked
@@ -267,7 +267,7 @@ log =
           ["\x1b[4", "1mfoo", "\x1b", "[31mbar baz"]
     , test "cursor movement" <|
         assertWindowRendersAs Ansi.Log.Raw
-          "\x1b[0mONE\r\n\x1b[0mtwo\r\n\x1b[0mthr\x1b[0mx\x1b[0me\x1b[0mE\r\n\x1b[0mf\x1b[0m!!\x1b[0mr\r\n\x1b[0mxyz"
+          "\x1b[0mONE\r\n\x1b[0mtwo\r\n\x1b[0mthrxeE\r\n\x1b[0mf!!r\r\n\x1b[0mxyz"
           [ "one\r\ntwo\r\nthree\r\nfour\r\nxyz\r"
           , "\x1b[4AONE"
           , "\x1b[2Bx"
@@ -277,7 +277,7 @@ log =
           ]
     , test "cursor movement (not ANSI.SYS)" <|
         assertWindowRendersAs Ansi.Log.Raw
-          "\x1b[0mONE\r\n\x1b[0mtwo\r\n\x1b[0mx\x1b[0my\x1b[0mree\r\n\x1b[0mfour\r\n\x1b[0mxyz"
+          "\x1b[0mONE\r\n\x1b[0mtwo\r\n\x1b[0mxyree\r\n\x1b[0mfour\r\n\x1b[0mxyz"
           [ "one\r\ntwo\r\nthree\r\nfour\r\nxyz\r"
           , "\x1b[4FONE"
           , "\x1b[2Ex"
@@ -285,20 +285,20 @@ log =
           ]
     , test "setting the cursor position" <|
         assertWindowRendersAs Ansi.Log.Raw
-          "\x1b[0mone\r\n\x1b[0mtwo\r\n\x1b[0mt\x1b[0mHR\x1b[0mee\r\n\x1b[0mf\x1b[0mOU\x1b[0mr\r\n\x1b[0mxyz"
+          "\x1b[0mone\r\n\x1b[0mtwo\r\n\x1b[0mtHRee\r\n\x1b[0mfOUr\r\n\x1b[0mxyz"
           [ "one\r\ntwo\r\nthree\r\nfour\r\nxyz\r"
           , "\x1b[3;2HHR"
           , "\x1b[4;2fOU"
           ]
     , test "saving and restoring the cursor position" <|
         assertWindowRendersAs Ansi.Log.Raw
-          "\x1b[0mone\r\n\x1b[0mtwo\r\n\x1b[0mt\x1b[0mHR\x1b[0mee\r\n\x1b[0mfour\r\n\x1b[0mxyz"
+          "\x1b[0mone\r\n\x1b[0mtwo\r\n\x1b[0mtHRee\r\n\x1b[0mfour\r\n\x1b[0mxyz"
           [ "one\r\ntwo\r\nt\x1b[shree\r\nfour\r\nxyz\r"
           , "\x1b[uHR"
           ]
     , test "erasing line contents" <|
         assertWindowRendersAs Ansi.Log.Raw
-          "\x1b[0mone\x1b[0mTWO\r\n\x1b[0m   \x1b[0mTWO\r\n\x1b[0m      \x1b[0mTHREEFOUR\r\n"
+          "\x1b[0moneTWO\r\n\x1b[0m   TWO\r\n\x1b[0m      THREEFOUR\r\n"
           [ "onetwenty\x1b[6D\x1b[KTWO\r\n"
           , "onetwo\x1b[3D\x1b[1KTWO\r\n"
           , "onetwo\x1b[2KTHREEFOUR\r\n"
