@@ -245,6 +245,14 @@ log =
         assertWindowRendersAs Ansi.Log.Raw
           "\x1b[0m\x1b[31mred\x1b[0m\x1b[31m\x1b[41mred bg"
           ["\x1b[31mred\x1b[41mred bg"]
+    , test "resetting foreground" <|
+        assertWindowRendersAs Ansi.Log.Raw
+          "\x1b[0m\x1b[31mred\x1b[0mwhite"
+          ["\x1b[31mred\x1b[39mwhite"]
+    , test "resetting background" <|
+        assertWindowRendersAs Ansi.Log.Raw
+          "\x1b[0m\x1b[41mred\x1b[0mwhite"
+          ["\x1b[41mred\x1b[49mwhite"]
     , test "text styling" <|
         assertWindowRendersAs Ansi.Log.Raw
           "\x1b[0mnormal\x1b[0m\x1b[1mbold\x1b[0m\x1b[1m\x1b[2mfaint\x1b[0m\x1b[1m\x1b[2m\x1b[3mitalic\x1b[0m\x1b[1m\x1b[2m\x1b[3m\x1b[4munderline\x1b[0m\x1b[1m\x1b[2m\x1b[3m\x1b[4m\x1b[7minverted"
