@@ -38,10 +38,13 @@ parsing =
           , Ansi.Print "italic"
           , Ansi.SetUnderline True
           , Ansi.Print "underline"
+          , Ansi.SetBlink True
+          , Ansi.Print "blink"
+          , Ansi.Print "fast blink"
           , Ansi.SetInverted True
           , Ansi.Print "inverted"
           ]
-          (Ansi.parse "normal\x1b[1mbold\x1b[2mfaint\x1b[3mitalic\x1b[4munderline\x1b[7minverted")
+          (Ansi.parse "normal\x1b[1mbold\x1b[2mfaint\x1b[3mitalic\x1b[4munderline\x1b[5mblink\x1b[6mfast blink\x1b[7minverted")
     , test "resetting" <|
         assertEqual
           [ Ansi.Print "some text"
@@ -51,6 +54,7 @@ parsing =
           , Ansi.SetFaint False
           , Ansi.SetItalic False
           , Ansi.SetUnderline False
+          , Ansi.SetBlink False
           , Ansi.SetInverted False
           , Ansi.Print "reset"
           , Ansi.SetForeground Nothing
@@ -59,6 +63,7 @@ parsing =
           , Ansi.SetFaint False
           , Ansi.SetItalic False
           , Ansi.SetUnderline False
+          , Ansi.SetBlink False
           , Ansi.SetInverted False
           , Ansi.Print "reset again"
           , Ansi.SetForeground Nothing
@@ -67,6 +72,7 @@ parsing =
           , Ansi.SetFaint False
           , Ansi.SetItalic False
           , Ansi.SetUnderline False
+          , Ansi.SetBlink False
           , Ansi.SetInverted False
           , Ansi.SetForeground (Just Ansi.Red)
           , Ansi.Print "reset to red"
@@ -210,6 +216,7 @@ styleFlags style =
     , if style.faint then "\x1b[2m" else ""
     , if style.italic then "\x1b[3m" else ""
     , if style.underline then "\x1b[4m" else ""
+    , if style.blink then "\x1b[5m" else ""
     , if style.inverted then "\x1b[7m" else ""
     ]
 
@@ -255,8 +262,8 @@ log =
           ["\x1b[41mred\x1b[49mwhite"]
     , test "text styling" <|
         assertWindowRendersAs Ansi.Log.Raw
-          "\x1b[0mnormal\x1b[0m\x1b[1mbold\x1b[0m\x1b[1m\x1b[2mfaint\x1b[0m\x1b[1m\x1b[2m\x1b[3mitalic\x1b[0m\x1b[1m\x1b[2m\x1b[3m\x1b[4munderline\x1b[0m\x1b[1m\x1b[2m\x1b[3m\x1b[4m\x1b[7minverted"
-          ["normal\x1b[1mbold\x1b[2mfaint\x1b[3mitalic\x1b[4munderline\x1b[7minverted"]
+          "\x1b[0mnormal\x1b[0m\x1b[1mbold\x1b[0m\x1b[1m\x1b[2mfaint\x1b[0m\x1b[1m\x1b[2m\x1b[3mitalic\x1b[0m\x1b[1m\x1b[2m\x1b[3m\x1b[4munderline\x1b[0m\x1b[1m\x1b[2m\x1b[3m\x1b[4m\x1b[5mblink\x1b[0m\x1b[1m\x1b[2m\x1b[3m\x1b[4m\x1b[5m\x1b[7minverted"
+          ["normal\x1b[1mbold\x1b[2mfaint\x1b[3mitalic\x1b[4munderline\x1b[5mblink\x1b[7minverted"]
     , test "line overwriting" <|
         assertWindowRendersAs Ansi.Log.Raw
           "\x1b[0m\x1b[31mred\x1b[0m baz"

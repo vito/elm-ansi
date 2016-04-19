@@ -30,6 +30,7 @@ type Action
   | SetFaint Bool
   | SetItalic Bool
   | SetUnderline Bool
+  | SetBlink Bool
   | SetInverted Bool
   | Linebreak
   | CarriageReturn
@@ -261,6 +262,7 @@ codeActions code =
     2 -> [SetFaint True]
     3 -> [SetItalic True]
     4 -> [SetUnderline True]
+    5 -> [SetBlink True]
     7 -> [SetInverted True]
     30 -> [SetForeground (Just Black)]
     31 -> [SetForeground (Just Red)]
@@ -306,5 +308,6 @@ reset =
   , SetFaint False
   , SetItalic False
   , SetUnderline False
+  , SetBlink False
   , SetInverted False
   ]

@@ -53,6 +53,7 @@ type alias Style =
   , faint : Bool
   , italic : Bool
   , underline : Bool
+  , blink : Bool
   , inverted : Bool
   }
 
@@ -89,6 +90,7 @@ init ldisc =
     , faint = False
     , italic = False
     , underline = False
+    , blink = False
     , inverted = False
     }
   , remainder = ""
@@ -220,6 +222,9 @@ updateStyle action style =
 
     Ansi.SetUnderline b ->
       { style | underline = b }
+
+    Ansi.SetBlink b ->
+      { style | blink = b }
 
     _ ->
       style
