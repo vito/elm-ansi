@@ -368,7 +368,11 @@ viewChunk chunk =
 
 styleAttributes : Style -> List Html.Attribute
 styleAttributes style =
-  [ Html.Attributes.style [("font-weight", if style.bold then "bold" else "normal")]
+  [ Html.Attributes.style
+      [ ("font-weight", if style.bold then "bold" else "normal")
+      , ("text-decoration", if style.underline then "underline" else "none")
+      , ("font-style", if style.italic then "italic" else "normal")
+      ]
   , let
       fgClasses =
         colorClasses "-fg"
@@ -378,8 +382,12 @@ styleAttributes style =
         colorClasses "-bg"
           style.bold
           (if not style.inverted then style.background else style.foreground)
+      fgbgClasses =
+        List.map (flip (,) True) (fgClasses ++ bgClasses)
+      ansiClasses =
+        [("ansi-blink", style.blink), ("ansi-faint", style.faint)]
     in
-      Html.Attributes.classList (List.map (flip (,) True) (fgClasses ++ bgClasses))
+      Html.Attributes.classList (fgbgClasses ++ ansiClasses)
   ]
 
 colorClasses : String -> Bool -> Maybe Ansi.Color -> List String
