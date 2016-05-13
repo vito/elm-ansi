@@ -1,4 +1,4 @@
-module Ansi (Color(..), Action(..), EraseMode(..), parse, parseInto) where
+module Ansi exposing (Color(..), Action(..), EraseMode(..), parse, parseInto)
 
 {-| This library primarily exposes the `parse` function and the types that it
 will yield.

@@ -1,4 +1,4 @@
-module Ansi.Log (Model, LineDiscipline(..), Line, Chunk, CursorPosition, Style, init, update, view) where
+module Ansi.Log exposing (Model, LineDiscipline(..), Line, Chunk, CursorPosition, Style, init, update, view)
 
 {-| Log interprets a stream of text and ANSI escape codes.
 
@@ -349,24 +349,24 @@ The `span` elements will have the following attributes:
 If the chunk is inverted, the `-fg` and `-bg` classes will have their colors
 swapped. If the chunk is bold, the `ansi-bold` class will be present.
 -}
-view : Model -> Html.Html
+view : Model -> Html.Html x
 view model =
   Html.pre []
     (Array.toList (Array.map lazyLine model.lines))
 
-lazyLine : Line -> Html.Html
+lazyLine : Line -> Html.Html x
 lazyLine = Html.Lazy.lazy viewLine
 
-viewLine : Line -> Html.Html
+viewLine : Line -> Html.Html x
 viewLine (chunks, _) =
   Html.div [] (List.foldl (\c l -> viewChunk c :: l) [Html.text "\n"] chunks)
 
-viewChunk : Chunk -> Html.Html
+viewChunk : Chunk -> Html.Html x
 viewChunk chunk =
   Html.span (styleAttributes chunk.style)
     [Html.text chunk.text]
 
-styleAttributes : Style -> List Html.Attribute
+styleAttributes : Style -> List (Html.Attribute x)
 styleAttributes style =
   [ Html.Attributes.style
       [ ("font-weight", if style.bold then "bold" else "normal")
