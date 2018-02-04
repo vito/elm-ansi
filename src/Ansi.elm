@@ -33,6 +33,8 @@ type Action
     | SetUnderline Bool
     | SetBlink Bool
     | SetInverted Bool
+    | SetFraktur Bool
+    | SetFramed Bool
     | Linebreak
     | CarriageReturn
     | CursorUp Int
@@ -315,6 +317,9 @@ codeActions code =
         7 ->
             [ SetInverted True ]
 
+        20 ->
+            [ SetFraktur True ]
+
         30 ->
             [ SetForeground (Just Black) ]
 
@@ -368,6 +373,9 @@ codeActions code =
 
         49 ->
             [ SetBackground Nothing ]
+
+        51 ->
+            [ SetFramed True ]
 
         90 ->
             [ SetForeground (Just BrightBlack) ]
@@ -431,4 +439,6 @@ reset =
     , SetUnderline False
     , SetBlink False
     , SetInverted False
+    , SetFraktur False
+    , SetFramed False
     ]

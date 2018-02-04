@@ -59,6 +59,8 @@ type alias Style =
     , underline : Bool
     , blink : Bool
     , inverted : Bool
+    , fraktur : Bool
+    , framed : Bool
     }
 
 
@@ -99,6 +101,8 @@ init ldisc =
         , underline = False
         , blink = False
         , inverted = False
+        , fraktur = False
+        , framed = False
         }
     , remainder = ""
     }
@@ -252,6 +256,12 @@ updateStyle action style =
 
         Ansi.SetBlink b ->
             { style | blink = b }
+
+        Ansi.SetFraktur b ->
+            { style | fraktur = b }
+
+        Ansi.SetFramed b ->
+            { style | framed = b }
 
         _ ->
             style
@@ -464,7 +474,8 @@ styleAttributes style =
             List.map (flip (,) True) (fgClasses ++ bgClasses)
 
         ansiClasses =
-            [ ( "ansi-blink", style.blink ), ( "ansi-faint", style.faint ) ]
+            [ ( "ansi-blink", style.blink ), ( "ansi-faint", style.faint ),
+              ( "ansi-Fraktur", style.fraktur ), ( "ansi-framed", style.framed)  ]
       in
         Html.Attributes.classList (fgbgClasses ++ ansiClasses)
     ]
