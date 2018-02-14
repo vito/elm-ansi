@@ -1,5 +1,5 @@
 {
-    "version": "8.1.0",
+    "version": "9.0.0",
     "summary": "Parsing streams of text with ANSI escape sequences",
     "repository": "https://github.com/vito/elm-ansi.git",
     "license": "Apache-2.0",
