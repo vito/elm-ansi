@@ -62,6 +62,8 @@ parsing =
                     , Ansi.SetUnderline False
                     , Ansi.SetBlink False
                     , Ansi.SetInverted False
+                    , Ansi.SetFraktur False
+                    , Ansi.SetFramed False
                     , Ansi.Print "reset"
                     , Ansi.SetForeground Nothing
                     , Ansi.SetBackground Nothing
@@ -71,6 +73,8 @@ parsing =
                     , Ansi.SetUnderline False
                     , Ansi.SetBlink False
                     , Ansi.SetInverted False
+                    , Ansi.SetFraktur False
+                    , Ansi.SetFramed False
                     , Ansi.Print "reset again"
                     , Ansi.SetForeground Nothing
                     , Ansi.SetBackground Nothing
@@ -80,6 +84,8 @@ parsing =
                     , Ansi.SetUnderline False
                     , Ansi.SetBlink False
                     , Ansi.SetInverted False
+                    , Ansi.SetFraktur False
+                    , Ansi.SetFramed False
                     , Ansi.SetForeground (Just Ansi.Red)
                     , Ansi.Print "reset to red"
                     ]
