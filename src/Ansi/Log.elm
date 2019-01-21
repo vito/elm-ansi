@@ -1,4 +1,7 @@
-module Ansi.Log exposing (Model, LineDiscipline(..), Line, Chunk, CursorPosition, Style, init, update, view, viewLine)
+module Ansi.Log exposing
+    ( init, update, view, viewLine
+    , Model, LineDiscipline(..), Line, Chunk, CursorPosition, Style
+    )
 
 {-| Log interprets a stream of text and ANSI escape codes.
 
@@ -8,12 +11,12 @@ module Ansi.Log exposing (Model, LineDiscipline(..), Line, Chunk, CursorPosition
 
 -}
 
+import Ansi
 import Array exposing (Array)
 import Html
 import Html.Attributes
 import Html.Lazy
 import String
-import Ansi
 
 
 {-| Model is populated by parsing ANSI character sequences and escape codes
@@ -133,13 +136,13 @@ handleAction action model =
                 chunk =
                     Chunk s model.style
 
-                update =
+                updatedChunk =
                     writeChunk model.position.column chunk
             in
-                { model
-                    | lines = updateLine model.position.row update model.lines
-                    , position = moveCursor 0 (chunkLen chunk) model.position
-                }
+            { model
+                | lines = updateLine model.position.row updatedChunk model.lines
+                , position = moveCursor 0 (chunkLen chunk) model.position
+            }
 
         Ansi.CarriageReturn ->
             { model | position = CursorPosition model.position.row 0 }
@@ -157,7 +160,7 @@ handleAction action model =
             { model | remainder = s }
 
         Ansi.CursorUp num ->
-            { model | position = moveCursor (-num) 0 model.position }
+            { model | position = moveCursor -num 0 model.position }
 
         Ansi.CursorDown num ->
             { model | position = moveCursor num 0 model.position }
@@ -166,7 +169,7 @@ handleAction action model =
             { model | position = moveCursor 0 num model.position }
 
         Ansi.CursorBack num ->
-            { model | position = moveCursor 0 (-num) model.position }
+            { model | position = moveCursor 0 -num model.position }
 
         Ansi.CursorPosition row col ->
             { model | position = CursorPosition (row - 1) (col - 1) }
@@ -187,17 +190,17 @@ handleAction action model =
                         chunk =
                             Chunk (String.repeat model.position.column " ") model.style
 
-                        update =
+                        updatedChunk =
                             writeChunk 0 chunk
                     in
-                        { model | lines = updateLine model.position.row update model.lines }
+                    { model | lines = updateLine model.position.row updatedChunk model.lines }
 
                 Ansi.EraseToEnd ->
                     let
-                        update =
+                        updater =
                             takeLeft model.position.column
                     in
-                        { model | lines = updateLine model.position.row update model.lines }
+                    { model | lines = updateLine model.position.row updater model.lines }
 
                 Ansi.EraseAll ->
                     { model | lines = updateLine model.position.row (always blankLine) model.lines }
@@ -212,24 +215,26 @@ moveCursor r c pos =
 
 
 updateLine : Int -> (Line -> Line) -> Array Line -> Array Line
-updateLine row update lines =
+updateLine row updater lines =
     let
         currentLines =
             Array.length lines
 
         line =
-            update <| Maybe.withDefault blankLine (Array.get row lines)
+            updater <| Maybe.withDefault blankLine (Array.get row lines)
     in
-        if row + 1 > currentLines then
-            appendLine (row - currentLines) line lines
-        else
-            Array.set row line lines
+    if row + 1 > currentLines then
+        appendLine (row - currentLines) line lines
+
+    else
+        Array.set row line lines
 
 
 appendLine : Int -> Line -> Array Line -> Array Line
 appendLine after line lines =
     if after == 0 then
         Array.push line lines
+
     else
         appendLine (after - 1) line (Array.push blankLine lines)
 
@@ -293,19 +298,22 @@ writeChunk pos chunk line =
         textChopped =
             len - pos
     in
-        if len == pos then
-            addChunk chunk line
-        else if pos > len then
-            addChunk chunk <| addChunk (spacing chunk.style (pos - len)) line
+    if len == pos then
+        addChunk chunk line
+
+    else if pos > len then
+        addChunk chunk <| addChunk (spacing chunk.style (pos - len)) line
+
+    else
+        let
+            appended =
+                addChunk chunk (dropRight (len - pos) line)
+        in
+        if afterLen > 0 then
+            List.foldl addChunk appended (Tuple.first <| takeRight afterLen line)
+
         else
-            let
-                appended =
-                    addChunk chunk (dropRight (len - pos) line)
-            in
-                if afterLen > 0 then
-                    List.foldl addChunk appended (Tuple.first <| takeRight afterLen line)
-                else
-                    appended
+            appended
 
 
 addChunk : Chunk -> Line -> Line
@@ -314,18 +322,20 @@ addChunk chunk line =
         clen =
             chunkLen chunk
     in
-        if clen == 0 then
-            line
-        else
-            case line of
-                ( [], _ ) ->
-                    ( [ chunk ], clen )
+    if clen == 0 then
+        line
 
-                ( c :: cs, llen ) ->
-                    if c.style == chunk.style then
-                        ( { c | text = String.append c.text chunk.text } :: cs, llen + clen )
-                    else
-                        ( chunk :: c :: cs, llen + clen )
+    else
+        case line of
+            ( [], _ ) ->
+                ( [ chunk ], clen )
+
+            ( c :: cs, llen ) ->
+                if c.style == chunk.style then
+                    ( { c | text = String.append c.text chunk.text } :: cs, llen + clen )
+
+                else
+                    ( chunk :: c :: cs, llen + clen )
 
 
 dropRight : Int -> Line -> Line
@@ -339,10 +349,11 @@ dropRight n line =
                 clen =
                     chunkLen c
             in
-                if clen <= n then
-                    dropRight (n - clen) ( cs, llen - clen )
-                else
-                    ( { c | text = String.dropRight n c.text } :: cs, llen - n )
+            if clen <= n then
+                dropRight (n - clen) ( cs, llen - clen )
+
+            else
+                ( { c | text = String.dropRight n c.text } :: cs, llen - n )
 
 
 takeRight : Int -> Line -> Line
@@ -356,12 +367,14 @@ takeRight n line =
                 clen =
                     chunkLen c
             in
-                if clen < n then
-                    addChunk c (takeRight (n - clen) ( cs, llen - clen ))
-                else if clen == n then
-                    ( [ c ], clen )
-                else
-                    ( [ { c | text = String.right n c.text } ], n )
+            if clen < n then
+                addChunk c (takeRight (n - clen) ( cs, llen - clen ))
+
+            else if clen == n then
+                ( [ c ], clen )
+
+            else
+                ( [ { c | text = String.right n c.text } ], n )
 
 
 spacing : Style -> Int -> Chunk
@@ -443,32 +456,34 @@ viewChunk chunk =
 
 styleAttributes : Style -> List (Html.Attribute x)
 styleAttributes style =
-    [ Html.Attributes.style
-        [ ( "font-weight"
-          , if style.bold then
-                "bold"
-            else
-                "normal"
-          )
-        , ( "text-decoration"
-          , if style.underline then
-                "underline"
-            else
-                "none"
-          )
-        , ( "font-style"
-          , if style.italic then
-                "italic"
-            else
-                "normal"
-          )
-        ]
+    [ Html.Attributes.style "font-weight"
+        (if style.bold then
+            "bold"
+
+         else
+            "normal"
+        )
+    , Html.Attributes.style "text-decoration"
+        (if style.underline then
+            "underline"
+
+         else
+            "none"
+        )
+    , Html.Attributes.style "font-style"
+        (if style.italic then
+            "italic"
+
+         else
+            "normal"
+        )
     , let
         fgClasses =
             colorClasses "-fg"
                 style.bold
                 (if not style.inverted then
                     style.foreground
+
                  else
                     style.background
                 )
@@ -478,18 +493,22 @@ styleAttributes style =
                 style.bold
                 (if not style.inverted then
                     style.background
+
                  else
                     style.foreground
                 )
 
         fgbgClasses =
-            List.map (flip (,) True) (fgClasses ++ bgClasses)
+            List.map (\a -> (\b c -> ( b, c )) a True) (fgClasses ++ bgClasses)
 
         ansiClasses =
-            [ ( "ansi-blink", style.blink ), ( "ansi-faint", style.faint ),
-              ( "ansi-Fraktur", style.fraktur ), ( "ansi-framed", style.framed)  ]
+            [ ( "ansi-blink", style.blink )
+            , ( "ansi-faint", style.faint )
+            , ( "ansi-Fraktur", style.fraktur )
+            , ( "ansi-framed", style.framed )
+            ]
       in
-        Html.Attributes.classList (fgbgClasses ++ ansiClasses)
+      Html.Attributes.classList (fgbgClasses ++ ansiClasses)
     ]
 
 
@@ -502,60 +521,62 @@ colorClasses suffix bold mc =
         prefix =
             if bold then
                 brightPrefix
+
             else
                 "ansi-"
     in
-        case mc of
-            Nothing ->
-                if bold then
-                    [ "ansi-bold" ]
-                else
-                    []
+    case mc of
+        Nothing ->
+            if bold then
+                [ "ansi-bold" ]
 
-            Just Ansi.Black ->
-                [ prefix ++ "black" ++ suffix ]
+            else
+                []
 
-            Just Ansi.Red ->
-                [ prefix ++ "red" ++ suffix ]
+        Just Ansi.Black ->
+            [ prefix ++ "black" ++ suffix ]
 
-            Just Ansi.Green ->
-                [ prefix ++ "green" ++ suffix ]
+        Just Ansi.Red ->
+            [ prefix ++ "red" ++ suffix ]
 
-            Just Ansi.Yellow ->
-                [ prefix ++ "yellow" ++ suffix ]
+        Just Ansi.Green ->
+            [ prefix ++ "green" ++ suffix ]
 
-            Just Ansi.Blue ->
-                [ prefix ++ "blue" ++ suffix ]
+        Just Ansi.Yellow ->
+            [ prefix ++ "yellow" ++ suffix ]
 
-            Just Ansi.Magenta ->
-                [ prefix ++ "magenta" ++ suffix ]
+        Just Ansi.Blue ->
+            [ prefix ++ "blue" ++ suffix ]
 
-            Just Ansi.Cyan ->
-                [ prefix ++ "cyan" ++ suffix ]
+        Just Ansi.Magenta ->
+            [ prefix ++ "magenta" ++ suffix ]
 
-            Just Ansi.White ->
-                [ prefix ++ "white" ++ suffix ]
+        Just Ansi.Cyan ->
+            [ prefix ++ "cyan" ++ suffix ]
 
-            Just Ansi.BrightBlack ->
-                [ brightPrefix ++ "black" ++ suffix ]
+        Just Ansi.White ->
+            [ prefix ++ "white" ++ suffix ]
 
-            Just Ansi.BrightRed ->
-                [ brightPrefix ++ "red" ++ suffix ]
+        Just Ansi.BrightBlack ->
+            [ brightPrefix ++ "black" ++ suffix ]
 
-            Just Ansi.BrightGreen ->
-                [ brightPrefix ++ "green" ++ suffix ]
+        Just Ansi.BrightRed ->
+            [ brightPrefix ++ "red" ++ suffix ]
 
-            Just Ansi.BrightYellow ->
-                [ brightPrefix ++ "yellow" ++ suffix ]
+        Just Ansi.BrightGreen ->
+            [ brightPrefix ++ "green" ++ suffix ]
 
-            Just Ansi.BrightBlue ->
-                [ brightPrefix ++ "blue" ++ suffix ]
+        Just Ansi.BrightYellow ->
+            [ brightPrefix ++ "yellow" ++ suffix ]
 
-            Just Ansi.BrightMagenta ->
-                [ brightPrefix ++ "magenta" ++ suffix ]
+        Just Ansi.BrightBlue ->
+            [ brightPrefix ++ "blue" ++ suffix ]
 
-            Just Ansi.BrightCyan ->
-                [ brightPrefix ++ "cyan" ++ suffix ]
+        Just Ansi.BrightMagenta ->
+            [ brightPrefix ++ "magenta" ++ suffix ]
 
-            Just Ansi.BrightWhite ->
-                [ brightPrefix ++ "white" ++ suffix ]
+        Just Ansi.BrightCyan ->
+            [ brightPrefix ++ "cyan" ++ suffix ]
+
+        Just Ansi.BrightWhite ->
+            [ brightPrefix ++ "white" ++ suffix ]

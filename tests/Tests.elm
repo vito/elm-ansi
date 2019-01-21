@@ -1,12 +1,12 @@
-module Tests exposing (..)
+module Tests exposing (all, assertWindowRendersAs, colorCode, esc, log, parsing, renderChunk, renderLine, renderWindow, styleFlags)
 
-import Test exposing (..)
-import Expect
-import Array
-import Regex
-import String
 import Ansi
 import Ansi.Log
+import Array
+import Expect
+import Regex
+import String
+import Test exposing (..)
 
 
 all : Test
@@ -30,7 +30,7 @@ parsing =
                     , Ansi.SetBackground (Just Ansi.BrightGreen)
                     , Ansi.Print "bright green bg"
                     ]
-                    (Ansi.parse "normal\x1B[31mred fg\x1B[42mgreen bg\x1B[91mbright red fg\x1B[102mbright green bg")
+                    (Ansi.parse "normal\u{001B}[31mred fg\u{001B}[42mgreen bg\u{001B}[91mbright red fg\u{001B}[102mbright green bg")
         , test "text styling" <|
             \() ->
                 Expect.equal
@@ -49,7 +49,7 @@ parsing =
                     , Ansi.SetInverted True
                     , Ansi.Print "inverted"
                     ]
-                    (Ansi.parse "normal\x1B[1mbold\x1B[2mfaint\x1B[3mitalic\x1B[4munderline\x1B[5mblink\x1B[6mfast blink\x1B[7minverted")
+                    (Ansi.parse "normal\u{001B}[1mbold\u{001B}[2mfaint\u{001B}[3mitalic\u{001B}[4munderline\u{001B}[5mblink\u{001B}[6mfast blink\u{001B}[7minverted")
         , test "resetting" <|
             \() ->
                 Expect.equal
@@ -89,7 +89,7 @@ parsing =
                     , Ansi.SetForeground (Just Ansi.Red)
                     , Ansi.Print "reset to red"
                     ]
-                    (Ansi.parse "some text\x1B[0mreset\x1B[mreset again\x1B[;31mreset to red")
+                    (Ansi.parse "some text\u{001B}[0mreset\u{001B}[mreset again\u{001B}[;31mreset to red")
         , test "carriage returns and linebreaks" <|
             \() ->
                 Expect.equal
@@ -102,7 +102,7 @@ parsing =
                     , Ansi.Linebreak
                     , Ansi.Print "shifted down"
                     ]
-                    (Ansi.parse "some text\x0D\nnext line\x0Doverwriting\nshifted down")
+                    (Ansi.parse "some text\u{000D}\nnext line\u{000D}overwriting\nshifted down")
         , test "cursor movement" <|
             \() ->
                 Expect.equal
@@ -129,7 +129,7 @@ parsing =
                     , Ansi.CursorPosition 1 1
                     , Ansi.CursorPosition 50 50
                     ]
-                    (Ansi.parse "\x1B[5A\x1B[50A\x1B[A\x1B[5B\x1B[50B\x1B[B\x1B[5C\x1B[50C\x1B[C\x1B[5D\x1B[50D\x1B[D\x1B[;50H\x1B[50;H\x1B[H\x1B[;H\x1B[50;50H\x1B[;50f\x1B[50;f\x1B[f\x1B[;f\x1B[50;50f")
+                    (Ansi.parse "\u{001B}[5A\u{001B}[50A\u{001B}[A\u{001B}[5B\u{001B}[50B\u{001B}[B\u{001B}[5C\u{001B}[50C\u{001B}[C\u{001B}[5D\u{001B}[50D\u{001B}[D\u{001B}[;50H\u{001B}[50;H\u{001B}[H\u{001B}[;H\u{001B}[50;50H\u{001B}[;50f\u{001B}[50;f\u{001B}[f\u{001B}[;f\u{001B}[50;50f")
         , test "cursor movement (not ANSI.SYS)" <|
             \() ->
                 Expect.equal
@@ -151,14 +151,14 @@ parsing =
                     , Ansi.CursorColumn 5
                     , Ansi.CursorColumn 50
                     ]
-                    (Ansi.parse "\x1B[E\x1B[5E\x1B[50E\x1B[F\x1B[5F\x1B[50F\x1B[G\x1B[0G\x1B[1G\x1B[5G\x1B[50G")
+                    (Ansi.parse "\u{001B}[E\u{001B}[5E\u{001B}[50E\u{001B}[F\u{001B}[5F\u{001B}[50F\u{001B}[G\u{001B}[0G\u{001B}[1G\u{001B}[5G\u{001B}[50G")
         , test "cursor position save/restore" <|
             \() ->
                 Expect.equal
                     [ Ansi.SaveCursorPosition
                     , Ansi.RestoreCursorPosition
                     ]
-                    (Ansi.parse "\x1B[s\x1B[u")
+                    (Ansi.parse "\u{001B}[s\u{001B}[u")
         , test "erasure" <|
             \() ->
                 Expect.equal
@@ -171,37 +171,37 @@ parsing =
                     , Ansi.EraseLine Ansi.EraseToBeginning
                     , Ansi.EraseLine Ansi.EraseAll
                     ]
-                    (Ansi.parse "\x1B[J\x1B[0J\x1B[1J\x1B[2J\x1B[K\x1B[0K\x1B[1K\x1B[2K")
+                    (Ansi.parse "\u{001B}[J\u{001B}[0J\u{001B}[1J\u{001B}[2J\u{001B}[K\u{001B}[0K\u{001B}[1K\u{001B}[2K")
         , test "partial escape sequence" <|
             \() ->
                 Expect.equal
-                    [ Ansi.Print "foo", Ansi.Remainder "\x1B" ]
-                    (Ansi.parse "foo\x1B")
+                    [ Ansi.Print "foo", Ansi.Remainder "\u{001B}" ]
+                    (Ansi.parse "foo\u{001B}")
         , test "partial escape sequence with bracket" <|
             \() ->
                 Expect.equal
-                    [ Ansi.Print "foo", Ansi.Remainder "\x1B[" ]
-                    (Ansi.parse "foo\x1B[")
+                    [ Ansi.Print "foo", Ansi.Remainder "\u{001B}[" ]
+                    (Ansi.parse "foo\u{001B}[")
         , test "partial escape sequence with bracket and codes" <|
             \() ->
                 Expect.equal
-                    [ Ansi.Print "foo", Ansi.Remainder "\x1B[31;32" ]
-                    (Ansi.parse "foo\x1B[31;32")
+                    [ Ansi.Print "foo", Ansi.Remainder "\u{001B}[31;32" ]
+                    (Ansi.parse "foo\u{001B}[31;32")
         , test "invalid escape sequences (no bracket)" <|
             \() ->
                 Expect.equal
                     [ Ansi.Print "foo", Ansi.Print "lol" ]
-                    (Ansi.parse "foo\x1Blol")
+                    (Ansi.parse "foo\u{001B}lol")
         , test "invalid escape sequences (double bracket)" <|
             \() ->
                 Expect.equal
                     [ Ansi.Print "foo", Ansi.Print "lol" ]
-                    (Ansi.parse "foo\x1B[[lol")
+                    (Ansi.parse "foo\u{001B}[[lol")
         , test "unknown escape sequences" <|
             \() ->
                 Expect.equal
                     [ Ansi.Print "foo", Ansi.Print "bar" ]
-                    (Ansi.parse "foo\x1B[1Zbar")
+                    (Ansi.parse "foo\u{001B}[1Zbar")
         ]
 
 
@@ -211,17 +211,17 @@ assertWindowRendersAs ldisc rendered updates =
         window =
             List.foldl Ansi.Log.update (Ansi.Log.init ldisc) updates
     in
-        Expect.equal (esc rendered) (esc <| renderWindow window)
+    Expect.equal (esc rendered) (esc <| renderWindow window)
 
 
 esc : String -> String
 esc =
-    Regex.replace Regex.All (Regex.regex "\x1B") (always "\\e")
+    Regex.replace (Maybe.withDefault Regex.never <| Regex.fromString "\u{001B}") (always "\\e")
 
 
 renderWindow : Ansi.Log.Model -> String
 renderWindow window =
-    String.join "\x0D\n" (Array.toList (Array.map renderLine window.lines))
+    String.join "\u{000D}\n" (Array.toList (Array.map renderLine window.lines))
 
 
 renderLine : Ansi.Log.Line -> String
@@ -231,7 +231,7 @@ renderLine ( chunks, _ ) =
 
 renderChunk : Ansi.Log.Chunk -> String
 renderChunk chunk =
-    "\x1B[0m" ++ styleFlags chunk.style ++ chunk.text
+    "\u{001B}[0m" ++ styleFlags chunk.style ++ chunk.text
 
 
 styleFlags : Ansi.Log.Style -> String
@@ -242,35 +242,41 @@ styleFlags style =
                 ""
 
             Just fg ->
-                "\x1B[" ++ toString (30 + colorCode fg) ++ "m"
+                "\u{001B}[" ++ String.fromInt (30 + colorCode fg) ++ "m"
         , case style.background of
             Nothing ->
                 ""
 
             Just bg ->
-                "\x1B[" ++ toString (40 + colorCode bg) ++ "m"
+                "\u{001B}[" ++ String.fromInt (40 + colorCode bg) ++ "m"
         , if style.bold then
-            "\x1B[1m"
+            "\u{001B}[1m"
+
           else
             ""
         , if style.faint then
-            "\x1B[2m"
+            "\u{001B}[2m"
+
           else
             ""
         , if style.italic then
-            "\x1B[3m"
+            "\u{001B}[3m"
+
           else
             ""
         , if style.underline then
-            "\x1B[4m"
+            "\u{001B}[4m"
+
           else
             ""
         , if style.blink then
-            "\x1B[5m"
+            "\u{001B}[5m"
+
           else
             ""
         , if style.inverted then
-            "\x1B[7m"
+            "\u{001B}[7m"
+
           else
             ""
         ]
@@ -332,90 +338,90 @@ log : Test
 log =
     describe "Log"
         [ test "basic printing" <|
-            \() -> assertWindowRendersAs Ansi.Log.Raw "\x1B[0mx" [ "x" ]
+            \() -> assertWindowRendersAs Ansi.Log.Raw "\u{001B}[0mx" [ "x" ]
         , test "basic printing of multiple chunks" <|
-            \() -> assertWindowRendersAs Ansi.Log.Raw "\x1B[0mxyz" [ "x", "y", "z" ]
+            \() -> assertWindowRendersAs Ansi.Log.Raw "\u{001B}[0mxyz" [ "x", "y", "z" ]
         , test "colors" <|
             \() ->
                 assertWindowRendersAs Ansi.Log.Raw
-                    "\x1B[0m\x1B[31mred\x1B[0m\x1B[31m\x1B[41mred bg"
-                    [ "\x1B[31mred\x1B[41mred bg" ]
+                    "\u{001B}[0m\u{001B}[31mred\u{001B}[0m\u{001B}[31m\u{001B}[41mred bg"
+                    [ "\u{001B}[31mred\u{001B}[41mred bg" ]
         , test "resetting foreground" <|
             \() ->
                 assertWindowRendersAs Ansi.Log.Raw
-                    "\x1B[0m\x1B[31mred\x1B[0mwhite"
-                    [ "\x1B[31mred\x1B[39mwhite" ]
+                    "\u{001B}[0m\u{001B}[31mred\u{001B}[0mwhite"
+                    [ "\u{001B}[31mred\u{001B}[39mwhite" ]
         , test "resetting background" <|
             \() ->
                 assertWindowRendersAs Ansi.Log.Raw
-                    "\x1B[0m\x1B[41mred\x1B[0mwhite"
-                    [ "\x1B[41mred\x1B[49mwhite" ]
+                    "\u{001B}[0m\u{001B}[41mred\u{001B}[0mwhite"
+                    [ "\u{001B}[41mred\u{001B}[49mwhite" ]
         , test "text styling" <|
             \() ->
                 assertWindowRendersAs Ansi.Log.Raw
-                    "\x1B[0mnormal\x1B[0m\x1B[1mbold\x1B[0m\x1B[1m\x1B[2mfaint\x1B[0m\x1B[1m\x1B[2m\x1B[3mitalic\x1B[0m\x1B[1m\x1B[2m\x1B[3m\x1B[4munderline\x1B[0m\x1B[1m\x1B[2m\x1B[3m\x1B[4m\x1B[5mblink\x1B[0m\x1B[1m\x1B[2m\x1B[3m\x1B[4m\x1B[5m\x1B[7minverted"
-                    [ "normal\x1B[1mbold\x1B[2mfaint\x1B[3mitalic\x1B[4munderline\x1B[5mblink\x1B[7minverted" ]
+                    "\u{001B}[0mnormal\u{001B}[0m\u{001B}[1mbold\u{001B}[0m\u{001B}[1m\u{001B}[2mfaint\u{001B}[0m\u{001B}[1m\u{001B}[2m\u{001B}[3mitalic\u{001B}[0m\u{001B}[1m\u{001B}[2m\u{001B}[3m\u{001B}[4munderline\u{001B}[0m\u{001B}[1m\u{001B}[2m\u{001B}[3m\u{001B}[4m\u{001B}[5mblink\u{001B}[0m\u{001B}[1m\u{001B}[2m\u{001B}[3m\u{001B}[4m\u{001B}[5m\u{001B}[7minverted"
+                    [ "normal\u{001B}[1mbold\u{001B}[2mfaint\u{001B}[3mitalic\u{001B}[4munderline\u{001B}[5mblink\u{001B}[7minverted" ]
         , test "line overwriting" <|
             \() ->
                 assertWindowRendersAs Ansi.Log.Raw
-                    "\x1B[0m\x1B[31mred\x1B[0m baz"
-                    [ "foo\x0D" ++ "bar baz\x0D\x1B[31mred" ]
+                    "\u{001B}[0m\u{001B}[31mred\u{001B}[0m baz"
+                    [ "foo\u{000D}" ++ "bar baz\u{000D}\u{001B}[31mred" ]
         , test "new lines in raw mode" <|
             \() ->
                 assertWindowRendersAs Ansi.Log.Raw
-                    "\x1B[0m\x1B[41mfoo\x0D\n\x1B[0m\x1B[41m   bar baz\x0D\n\x1B[0m\x1B[41m          "
-                    [ "\x1B[41mfoo\nbar baz\n" ]
+                    "\u{001B}[0m\u{001B}[41mfoo\u{000D}\n\u{001B}[0m\u{001B}[41m   bar baz\u{000D}\n\u{001B}[0m\u{001B}[41m          "
+                    [ "\u{001B}[41mfoo\nbar baz\n" ]
         , test "new lines in cooked mode" <|
             \() ->
                 assertWindowRendersAs Ansi.Log.Cooked
-                    "\x1B[0m\x1B[41mfoo\x0D\n\x1B[0m\x1B[41mbar baz\x0D\n"
-                    [ "\x1B[41mfoo\nbar baz\n" ]
+                    "\u{001B}[0m\u{001B}[41mfoo\u{000D}\n\u{001B}[0m\u{001B}[41mbar baz\u{000D}\n"
+                    [ "\u{001B}[41mfoo\nbar baz\n" ]
         , test "ansi escapes on boundaries" <|
             \() ->
                 assertWindowRendersAs Ansi.Log.Raw
-                    "\x1B[0m\x1B[41mfoo\x1B[0m\x1B[31m\x1B[41mbar baz"
-                    [ "\x1B[4", "1mfoo", "\x1B", "[31mbar baz" ]
+                    "\u{001B}[0m\u{001B}[41mfoo\u{001B}[0m\u{001B}[31m\u{001B}[41mbar baz"
+                    [ "\u{001B}[4", "1mfoo", "\u{001B}", "[31mbar baz" ]
         , test "cursor movement" <|
             \() ->
                 assertWindowRendersAs Ansi.Log.Raw
-                    "\x1B[0mONE\x0D\n\x1B[0mtwo\x0D\n\x1B[0mthrxeE\x0D\n\x1B[0mf!!r\x0D\n\x1B[0mxyz"
-                    [ "one\x0D\ntwo\x0D\nthree\x0D\nfour\x0D\nxyz\x0D"
-                    , "\x1B[4AONE"
-                    , "\x1B[2Bx"
-                    , "\x1B[CE"
-                    , "\x1B[B"
-                    , "\x1B[5D!!"
+                    "\u{001B}[0mONE\u{000D}\n\u{001B}[0mtwo\u{000D}\n\u{001B}[0mthrxeE\u{000D}\n\u{001B}[0mf!!r\u{000D}\n\u{001B}[0mxyz"
+                    [ "one\u{000D}\ntwo\u{000D}\nthree\u{000D}\nfour\u{000D}\nxyz\u{000D}"
+                    , "\u{001B}[4AONE"
+                    , "\u{001B}[2Bx"
+                    , "\u{001B}[CE"
+                    , "\u{001B}[B"
+                    , "\u{001B}[5D!!"
                     ]
         , test "cursor movement (not ANSI.SYS)" <|
             \() ->
                 assertWindowRendersAs Ansi.Log.Raw
-                    "\x1B[0mONE\x0D\n\x1B[0mtwo\x0D\n\x1B[0mxyree\x0D\n\x1B[0mfour\x0D\n\x1B[0mxyz"
-                    [ "one\x0D\ntwo\x0D\nthree\x0D\nfour\x0D\nxyz\x0D"
-                    , "\x1B[4FONE"
-                    , "\x1B[2Ex"
-                    , "\x1B[1Gy"
+                    "\u{001B}[0mONE\u{000D}\n\u{001B}[0mtwo\u{000D}\n\u{001B}[0mxyree\u{000D}\n\u{001B}[0mfour\u{000D}\n\u{001B}[0mxyz"
+                    [ "one\u{000D}\ntwo\u{000D}\nthree\u{000D}\nfour\u{000D}\nxyz\u{000D}"
+                    , "\u{001B}[4FONE"
+                    , "\u{001B}[2Ex"
+                    , "\u{001B}[1Gy"
                     ]
         , test "setting the cursor position" <|
             \() ->
                 assertWindowRendersAs Ansi.Log.Raw
-                    "\x1B[0mone\x0D\n\x1B[0mtwo\x0D\n\x1B[0mtHRee\x0D\n\x1B[0mfOUr\x0D\n\x1B[0mxyz"
-                    [ "one\x0D\ntwo\x0D\nthree\x0D\nfour\x0D\nxyz\x0D"
-                    , "\x1B[3;2HHR"
-                    , "\x1B[4;2fOU"
+                    "\u{001B}[0mone\u{000D}\n\u{001B}[0mtwo\u{000D}\n\u{001B}[0mtHRee\u{000D}\n\u{001B}[0mfOUr\u{000D}\n\u{001B}[0mxyz"
+                    [ "one\u{000D}\ntwo\u{000D}\nthree\u{000D}\nfour\u{000D}\nxyz\u{000D}"
+                    , "\u{001B}[3;2HHR"
+                    , "\u{001B}[4;2fOU"
                     ]
         , test "saving and restoring the cursor position" <|
             \() ->
                 assertWindowRendersAs Ansi.Log.Raw
-                    "\x1B[0mone\x0D\n\x1B[0mtwo\x0D\n\x1B[0mtHRee\x0D\n\x1B[0mfour\x0D\n\x1B[0mxyz"
-                    [ "one\x0D\ntwo\x0D\nt\x1B[shree\x0D\nfour\x0D\nxyz\x0D"
-                    , "\x1B[uHR"
+                    "\u{001B}[0mone\u{000D}\n\u{001B}[0mtwo\u{000D}\n\u{001B}[0mtHRee\u{000D}\n\u{001B}[0mfour\u{000D}\n\u{001B}[0mxyz"
+                    [ "one\u{000D}\ntwo\u{000D}\nt\u{001B}[shree\u{000D}\nfour\u{000D}\nxyz\u{000D}"
+                    , "\u{001B}[uHR"
                     ]
         , test "erasing line contents" <|
             \() ->
                 assertWindowRendersAs Ansi.Log.Raw
-                    "\x1B[0moneTWO\x0D\n\x1B[0m   TWO\x0D\n\x1B[0m      THREEFOUR\x0D\n"
-                    [ "onetwenty\x1B[6D\x1B[KTWO\x0D\n"
-                    , "onetwo\x1B[3D\x1B[1KTWO\x0D\n"
-                    , "onetwo\x1B[2KTHREEFOUR\x0D\n"
+                    "\u{001B}[0moneTWO\u{000D}\n\u{001B}[0m   TWO\u{000D}\n\u{001B}[0m      THREEFOUR\u{000D}\n"
+                    [ "onetwenty\u{001B}[6D\u{001B}[KTWO\u{000D}\n"
+                    , "onetwo\u{001B}[3D\u{001B}[1KTWO\u{000D}\n"
+                    , "onetwo\u{001B}[2KTHREEFOUR\u{000D}\n"
                     ]
         ]

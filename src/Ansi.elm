@@ -1,4 +1,7 @@
-module Ansi exposing (Color(..), Action(..), EraseMode(..), parse, parseInto)
+module Ansi exposing
+    ( parse, parseInto
+    , Action(..), Color(..), EraseMode(..)
+    )
 
 {-| This library primarily exposes the `parse` function and the types that it
 will yield.
@@ -6,6 +9,7 @@ will yield.
 @docs parse, parseInto
 
 @docs Action, Color, EraseMode
+
 -}
 
 import Char
@@ -14,13 +18,14 @@ import String
 
 {-| The events relevant to interpreting the stream.
 
-* `Print` is a chunk of text which should be interpreted with the style implied
-  by the preceding actions (i.e. `[SetBold True, Print "foo"]`) should yield a
-  bold `foo`
-* `Remainder` is a partial ANSI escape sequence, returned at the end of the
-  actions if it was cut off. The next string passed to `parse` should have this
-  prepended to it.
-* The rest are derived from their respective ANSI escape sequences.
+  - `Print` is a chunk of text which should be interpreted with the style implied
+    by the preceding actions (i.e. `[SetBold True, Print "foo"]`) should yield a
+    bold `foo`
+  - `Remainder` is a partial ANSI escape sequence, returned at the end of the
+    actions if it was cut off. The next string passed to `parse` should have this
+    prepended to it.
+  - The rest are derived from their respective ANSI escape sequences.
+
 -}
 type Action
     = Print String
@@ -98,6 +103,7 @@ emptyParser =
 If the input string ends with a partial ANSI escape sequence, it will be
 yielded as a `Remainder` action, which should then be prepended to the next
 call to `parse`.
+
 -}
 parse : String -> List Action
 parse =
@@ -117,10 +123,10 @@ completeParsing : Parser a -> a
 completeParsing parser =
     case parser of
         Parser Escaped model update ->
-            update (Remainder "\x1B") model
+            update (Remainder "\u{001B}") model
 
         Parser (CSI codes currentCode) model update ->
-            update (Remainder <| "\x1B[" ++ encodeCodes (codes ++ [ currentCode ])) model
+            update (Remainder <| "\u{001B}[" ++ encodeCodes (codes ++ [ currentCode ])) model
 
         Parser (Unescaped "") model _ ->
             model
@@ -141,7 +147,7 @@ encodeCode code =
             ""
 
         Just num ->
-            toString num
+            String.fromInt num
 
 
 parseChar : String -> Parser a -> Parser a
@@ -149,13 +155,13 @@ parseChar char parser =
     case parser of
         Parser (Unescaped str) model update ->
             case char of
-                "\x0D" ->
+                "\u{000D}" ->
                     Parser (Unescaped "") (update CarriageReturn (completeUnescaped parser)) update
 
                 "\n" ->
                     Parser (Unescaped "") (update Linebreak (completeUnescaped parser)) update
 
-                "\x1B" ->
+                "\u{001B}" ->
                     Parser Escaped (completeUnescaped parser) update
 
                 _ ->
@@ -232,10 +238,10 @@ parseChar char parser =
 
                 c ->
                     case String.toInt c of
-                        Ok num ->
+                        Just num ->
                             Parser (CSI codes (Just ((Maybe.withDefault 0 currentCode * 10) + num))) model update
 
-                        Err _ ->
+                        Nothing ->
                             completeBracketed parser []
 
 
