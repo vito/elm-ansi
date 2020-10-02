@@ -31,6 +31,20 @@ parsing =
                     , Ansi.Print "bright green bg"
                     ]
                     (Ansi.parse "normal\u{001B}[31mred fg\u{001B}[42mgreen bg\u{001B}[91mbright red fg\u{001B}[102mbright green bg")
+        , test "single argument colors" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.Print "normal"
+                    , Ansi.SetForeground (Just Ansi.Red)
+                    , Ansi.Print "red fg"
+                    , Ansi.SetBackground (Just Ansi.Green)
+                    , Ansi.Print "green bg"
+                    , Ansi.SetForeground (Just Ansi.BrightRed)
+                    , Ansi.Print "bright red fg"
+                    , Ansi.SetBackground (Just Ansi.BrightGreen)
+                    , Ansi.Print "bright green bg"
+                    ]
+                    (Ansi.parse "normal\u{001B}[38;5;1mred fg\u{001B}[48;5;2mgreen bg\u{001B}[38;5;9mbright red fg\u{001B}[48;5;10mbright green bg")
         , test "text styling" <|
             \() ->
                 Expect.equal

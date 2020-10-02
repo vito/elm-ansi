@@ -149,6 +149,33 @@ encodeCode code =
         Just num ->
             String.fromInt num
 
+{-| Offsets SGR argument number to equivalent standard and high intensity ESC code
+-}
+offsetColorCode : Int -> Int -> Int
+offsetColorCode code offset =
+    -- standard
+    if code >= 0 && code < 8 then code + offset
+
+    -- high intensity
+    else if code >= 8  && code < 16 then code + offset + 52
+
+    else code
+
+{-| Capture SGR arguments in pattern match
+-}
+captureArguments : List Int -> List Action
+captureArguments list =
+    case list of
+        -- foreground colors
+        38 :: 5 :: n :: xs -> codeActions (offsetColorCode n 30) ++ captureArguments xs
+
+        -- background colors
+        48 :: 5 :: n :: xs -> codeActions (offsetColorCode n 40) ++ captureArguments xs
+
+        n :: xs -> codeActions n ++ captureArguments xs
+
+        [] -> []
+
 
 parseChar : String -> Parser a -> Parser a
 parseChar char parser =
@@ -179,9 +206,7 @@ parseChar char parser =
             case char of
                 "m" ->
                     completeBracketed parser <|
-                        List.concatMap
-                            (codeActions << Maybe.withDefault 0)
-                            (codes ++ [ currentCode ])
+                        captureArguments <| List.map (Maybe.withDefault 0) (codes ++ [ currentCode ])
 
                 "A" ->
                     completeBracketed parser
