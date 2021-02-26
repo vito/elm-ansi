@@ -45,6 +45,20 @@ parsing =
                     , Ansi.Print "bright green bg"
                     ]
                     (Ansi.parse "normal\u{001B}[38;5;1mred fg\u{001B}[48;5;2mgreen bg\u{001B}[38;5;9mbright red fg\u{001B}[48;5;10mbright green bg")
+        , test "8-bit colors" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.Print "normal"
+                    , Ansi.SetForeground (Just <| Ansi.Custom 0 215 95)
+                    , Ansi.Print "green fg"
+                    , Ansi.SetBackground (Just <| Ansi.Custom 255 95 0)
+                    , Ansi.Print "orange bg"
+                    , Ansi.SetForeground (Just <| Ansi.Custom 88 88 88)
+                    , Ansi.Print "dark grey fg"
+                    , Ansi.SetBackground (Just <| Ansi.Custom 188 188 188)
+                    , Ansi.Print "light grey bg"
+                    ]
+                    (Ansi.parse "normal\u{001B}[38;5;41mgreen fg\u{001B}[48;5;202morange bg\u{001B}[38;5;240mdark grey fg\u{001B}[48;5;250mlight grey bg")
         , test "text styling" <|
             \() ->
                 Expect.equal
@@ -346,6 +360,10 @@ colorCode color =
 
         Ansi.BrightWhite ->
             67
+
+        Ansi.Custom _ _ _ ->
+            -- not supported in this format
+            -1
 
 
 log : Test
