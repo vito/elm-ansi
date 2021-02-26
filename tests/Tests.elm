@@ -59,6 +59,18 @@ parsing =
                     , Ansi.Print "light grey bg"
                     ]
                     (Ansi.parse "normal\u{001B}[38;5;41mgreen fg\u{001B}[48;5;202morange bg\u{001B}[38;5;240mdark grey fg\u{001B}[48;5;250mlight grey bg")
+        , test "24-bit colors" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.Print "normal"
+                    , Ansi.SetForeground (Just <| Ansi.Custom 123 15 51)
+                    , Ansi.Print "custom fg"
+                    , Ansi.SetBackground (Just <| Ansi.Custom 55 66 77)
+                    , Ansi.Print "custom bg"
+                    , Ansi.SetBackground (Just <| Ansi.Custom 255 0 255)
+                    , Ansi.Print "clamped"
+                    ]
+                    (Ansi.parse "normal\u{001B}[38;2;123;15;51mcustom fg\u{001B}[48;2;55;66;77mcustom bg\u{001B}[48;2;1000;0;255mclamped")
         , test "text styling" <|
             \() ->
                 Expect.equal

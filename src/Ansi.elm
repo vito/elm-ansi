@@ -255,6 +255,20 @@ captureArguments list =
         48 :: 5 :: n :: xs ->
             SetBackground (colorCode n) :: captureArguments xs
 
+        38 :: 2 :: r :: g :: b :: xs ->
+            let
+                c =
+                    clamp 0 255
+            in
+            SetForeground (Just <| Custom (c r) (c g) (c b)) :: captureArguments xs
+
+        48 :: 2 :: r :: g :: b :: xs ->
+            let
+                c =
+                    clamp 0 255
+            in
+            SetBackground (Just <| Custom (c r) (c g) (c b)) :: captureArguments xs
+
         n :: xs ->
             codeActions n ++ captureArguments xs
 
