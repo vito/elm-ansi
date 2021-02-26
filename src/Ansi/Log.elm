@@ -456,6 +456,27 @@ viewChunk chunk =
 
 styleAttributes : Style -> List (Html.Attribute x)
 styleAttributes style =
+    let
+        fgStyles =
+            colorStyles True
+                style.bold
+                (if not style.inverted then
+                    style.foreground
+
+                 else
+                    style.background
+                )
+
+        bgStyles =
+            colorStyles False
+                style.bold
+                (if not style.inverted then
+                    style.background
+
+                 else
+                    style.foreground
+                )
+    in
     [ Html.Attributes.style "font-weight"
         (if style.bold then
             "bold"
@@ -477,44 +498,27 @@ styleAttributes style =
          else
             "normal"
         )
-    , let
-        fgClasses =
-            colorClasses "-fg"
-                style.bold
-                (if not style.inverted then
-                    style.foreground
-
-                 else
-                    style.background
-                )
-
-        bgClasses =
-            colorClasses "-bg"
-                style.bold
-                (if not style.inverted then
-                    style.background
-
-                 else
-                    style.foreground
-                )
-
-        fgbgClasses =
-            List.map (\a -> (\b c -> ( b, c )) a True) (fgClasses ++ bgClasses)
-
-        ansiClasses =
-            [ ( "ansi-blink", style.blink )
-            , ( "ansi-faint", style.faint )
-            , ( "ansi-Fraktur", style.fraktur )
-            , ( "ansi-framed", style.framed )
-            ]
-      in
-      Html.Attributes.classList (fgbgClasses ++ ansiClasses)
+    , Html.Attributes.classList
+        [ ( "ansi-blink", style.blink )
+        , ( "ansi-faint", style.faint )
+        , ( "ansi-Fraktur", style.fraktur )
+        , ( "ansi-framed", style.framed )
+        ]
     ]
+        ++ fgStyles
+        ++ bgStyles
 
 
-colorClasses : String -> Bool -> Maybe Ansi.Color -> List String
-colorClasses suffix bold mc =
+colorStyles : Bool -> Bool -> Maybe Ansi.Color -> List (Html.Attribute x)
+colorStyles fg bold mc =
     let
+        suffix =
+            if fg then
+                "-fg"
+
+            else
+                "-bg"
+
         brightPrefix =
             "ansi-bright-"
 
@@ -524,59 +528,84 @@ colorClasses suffix bold mc =
 
             else
                 "ansi-"
+
+        class name =
+            [ Html.Attributes.class (prefix ++ name ++ suffix) ]
+
+        brightClass name =
+            [ Html.Attributes.class (brightPrefix ++ name ++ suffix) ]
     in
     case mc of
         Nothing ->
             if bold then
-                [ "ansi-bold" ]
+                [ Html.Attributes.class "ansi-bold" ]
 
             else
                 []
 
         Just Ansi.Black ->
-            [ prefix ++ "black" ++ suffix ]
+            class "black"
 
         Just Ansi.Red ->
-            [ prefix ++ "red" ++ suffix ]
+            class "red"
 
         Just Ansi.Green ->
-            [ prefix ++ "green" ++ suffix ]
+            class "green"
 
         Just Ansi.Yellow ->
-            [ prefix ++ "yellow" ++ suffix ]
+            class "yellow"
 
         Just Ansi.Blue ->
-            [ prefix ++ "blue" ++ suffix ]
+            class "blue"
 
         Just Ansi.Magenta ->
-            [ prefix ++ "magenta" ++ suffix ]
+            class "magenta"
 
         Just Ansi.Cyan ->
-            [ prefix ++ "cyan" ++ suffix ]
+            class "cyan"
 
         Just Ansi.White ->
-            [ prefix ++ "white" ++ suffix ]
+            class "white"
 
         Just Ansi.BrightBlack ->
-            [ brightPrefix ++ "black" ++ suffix ]
+            brightClass "black"
 
         Just Ansi.BrightRed ->
-            [ brightPrefix ++ "red" ++ suffix ]
+            brightClass "red"
 
         Just Ansi.BrightGreen ->
-            [ brightPrefix ++ "green" ++ suffix ]
+            brightClass "green"
 
         Just Ansi.BrightYellow ->
-            [ brightPrefix ++ "yellow" ++ suffix ]
+            brightClass "yellow"
 
         Just Ansi.BrightBlue ->
-            [ brightPrefix ++ "blue" ++ suffix ]
+            brightClass "blue"
 
         Just Ansi.BrightMagenta ->
-            [ brightPrefix ++ "magenta" ++ suffix ]
+            brightClass "magenta"
 
         Just Ansi.BrightCyan ->
-            [ brightPrefix ++ "cyan" ++ suffix ]
+            brightClass "cyan"
 
         Just Ansi.BrightWhite ->
-            [ brightPrefix ++ "white" ++ suffix ]
+            brightClass "white"
+
+        Just (Ansi.Custom r g b) ->
+            let
+                attr =
+                    if fg then
+                        "color"
+
+                    else
+                        "background-color"
+            in
+            [ Html.Attributes.style attr <|
+                "rgb("
+                    ++ String.fromInt r
+                    ++ ","
+                    ++ String.fromInt g
+                    ++ ","
+                    ++ String.fromInt b
+                    ++ ")"
+            ]

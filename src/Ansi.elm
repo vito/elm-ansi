@@ -73,6 +73,7 @@ type Color
     | BrightMagenta
     | BrightCyan
     | BrightWhite
+    | Custom Int Int Int
 
 
 {-| Method to erase the display or line.
@@ -149,32 +150,130 @@ encodeCode code =
         Just num ->
             String.fromInt num
 
-{-| Offsets SGR argument number to equivalent standard and high intensity ESC code
+
+{-| Converts a color code to an 8-bit color per
+<https://en.wikipedia.org/wiki/ANSI_escape_code#8-bit>
 -}
-offsetColorCode : Int -> Int -> Int
-offsetColorCode code offset =
-    -- standard
-    if code >= 0 && code < 8 then code + offset
+colorCode : Int -> Maybe Color
+colorCode code =
+    case code of
+        0 ->
+            Just Black
 
-    -- high intensity
-    else if code >= 8  && code < 16 then code + offset + 52
+        1 ->
+            Just Red
 
-    else code
+        2 ->
+            Just Green
+
+        3 ->
+            Just Yellow
+
+        4 ->
+            Just Blue
+
+        5 ->
+            Just Magenta
+
+        6 ->
+            Just Cyan
+
+        7 ->
+            Just White
+
+        8 ->
+            Just BrightBlack
+
+        9 ->
+            Just BrightRed
+
+        10 ->
+            Just BrightGreen
+
+        11 ->
+            Just BrightYellow
+
+        12 ->
+            Just BrightBlue
+
+        13 ->
+            Just BrightMagenta
+
+        14 ->
+            Just BrightCyan
+
+        15 ->
+            Just BrightWhite
+
+        _ ->
+            if code >= 16 && code < 232 then
+                let
+                    c =
+                        code - 16
+
+                    b =
+                        modBy 6 c
+
+                    g =
+                        modBy 6 (c // 6)
+
+                    r =
+                        modBy 6 ((c // 6) // 6)
+
+                    -- Scales [0,5] -> [0,255] (not uniformly)
+                    -- 0     1     2     3     4     5
+                    -- 0    95   135   175   215   255
+                    scale n =
+                        if n == 0 then
+                            0
+
+                        else
+                            55 + n * 40
+                in
+                Just <| Custom (scale r) (scale g) (scale b)
+
+            else if code >= 232 && code < 256 then
+                let
+                    -- scales [232,255] -> [8,238]
+                    c =
+                        (code - 232) * 10 + 8
+                in
+                Just <| Custom c c c
+
+            else
+                Nothing
+
 
 {-| Capture SGR arguments in pattern match
 -}
 captureArguments : List Int -> List Action
 captureArguments list =
     case list of
-        -- foreground colors
-        38 :: 5 :: n :: xs -> codeActions (offsetColorCode n 30) ++ captureArguments xs
+        38 :: 5 :: n :: xs ->
+            SetForeground (colorCode n) :: captureArguments xs
 
-        -- background colors
-        48 :: 5 :: n :: xs -> codeActions (offsetColorCode n 40) ++ captureArguments xs
+        48 :: 5 :: n :: xs ->
+            SetBackground (colorCode n) :: captureArguments xs
 
-        n :: xs -> codeActions n ++ captureArguments xs
+        38 :: 2 :: r :: g :: b :: xs ->
+            let
+                c =
+                    clamp 0 255
+            in
+            SetForeground (Just <| Custom (c r) (c g) (c b)) :: captureArguments xs
 
-        [] -> []
+        48 :: 2 :: r :: g :: b :: xs ->
+            let
+                c =
+                    clamp 0 255
+            in
+            SetBackground (Just <| Custom (c r) (c g) (c b)) :: captureArguments xs
+
+        n :: xs ->
+            codeActions n ++ captureArguments xs
+
+        [] ->
+            []
 
 
 parseChar : String -> Parser a -> Parser a
@@ -206,7 +305,8 @@ parseChar char parser =
             case char of
                 "m" ->
                     completeBracketed parser <|
-                        captureArguments <| List.map (Maybe.withDefault 0) (codes ++ [ currentCode ])
+                        captureArguments <|
+                            List.map (Maybe.withDefault 0) (codes ++ [ currentCode ])
 
                 "A" ->
                     completeBracketed parser
