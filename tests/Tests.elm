@@ -130,6 +130,20 @@ parsing =
                     , Ansi.Print "reset to red"
                     ]
                     (Ansi.parse "some text\u{001B}[0mreset\u{001B}[mreset again\u{001B}[;31mreset to red")
+        , test "partial resetting" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.Print "some text"
+                    , Ansi.SetBold False
+                    , Ansi.Print "not bold"
+                    , Ansi.SetFaint False
+                    , Ansi.SetBold False
+                    , Ansi.Print "not intense"
+                    , Ansi.SetItalic False
+                    , Ansi.SetFraktur False
+                    , Ansi.Print "not italic/fraktur"
+                    ]
+                    (Ansi.parse "some text\u{001B}[21mnot bold\u{001B}[22mnot intense\u{001B}[23mnot italic/fraktur")
         , test "carriage returns and linebreaks" <|
             \() ->
                 Expect.equal
