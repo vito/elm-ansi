@@ -451,6 +451,28 @@ codeActions code =
         20 ->
             [ SetFraktur True ]
 
+        21 ->
+            [ SetBold False ]
+
+        22 ->
+            [ SetFaint False
+            , SetBold False
+            ]
+
+        23 ->
+            [ SetItalic False
+            , SetFraktur False
+            ]
+
+        24 ->
+            [ SetUnderline False ]
+
+        25 ->
+            [ SetBlink False ]
+
+        27 ->
+            [ SetInverted False ]
+
         30 ->
             [ SetForeground (Just Black) ]
 
@@ -507,6 +529,9 @@ codeActions code =
 
         51 ->
             [ SetFramed True ]
+
+        54 ->
+            [ SetFramed False ]
 
         90 ->
             [ SetForeground (Just BrightBlack) ]
