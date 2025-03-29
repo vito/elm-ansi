@@ -14,6 +14,7 @@ will yield.
 
 import Char
 import String
+import Url
 
 
 {-| The events relevant to interpreting the stream.
@@ -24,6 +25,8 @@ import String
   - `Remainder` is a partial ANSI escape sequence, returned at the end of the
     actions if it was cut off. The next string passed to `parse` should have this
     prepended to it.
+  - `HyperlinkStart` starts a hyperlink with the given parameters and URL
+  - `HyperlinkEnd` ends a hyperlink
   - The rest are derived from their respective ANSI escape sequences.
 
 -}
@@ -52,6 +55,8 @@ type Action
     | EraseLine EraseMode
     | SaveCursorPosition
     | RestoreCursorPosition
+    | HyperlinkStart (List String) String  -- (params, uri)
+    | HyperlinkEnd
 
 
 {-| The colors applied to the foreground/background.
@@ -85,18 +90,20 @@ type EraseMode
 
 
 type Parser a
-    = Parser ParserState a (Action -> a -> a)
+    = Parser ParserState Bool a (Action -> a -> a)
 
 
 type ParserState
     = Escaped
     | CSI (List (Maybe Int)) (Maybe Int)
+    | OSC String
+    | OSCTerminating String
     | Unescaped String
 
 
 emptyParser : a -> (Action -> a -> a) -> Parser a
-emptyParser =
-    Parser (Unescaped "")
+emptyParser model update =
+    Parser (Unescaped "") False model update
 
 
 {-| Convert an arbitrary String of text into a sequence of actions.
@@ -123,16 +130,22 @@ parseInto model update ansi =
 completeParsing : Parser a -> a
 completeParsing parser =
     case parser of
-        Parser Escaped model update ->
+        Parser Escaped _ model update ->
             update (Remainder "\u{001B}") model
 
-        Parser (CSI codes currentCode) model update ->
+        Parser (CSI codes currentCode) _ model update ->
             update (Remainder <| "\u{001B}[" ++ encodeCodes (codes ++ [ currentCode ])) model
 
-        Parser (Unescaped "") model _ ->
+        Parser (OSC chars) _ model update ->
+            update (Remainder <| "\u{001B}]" ++ chars) model
+
+        Parser (OSCTerminating chars) _ model update ->
+            update (Remainder <| "\u{001B}]" ++ chars ++ "\u{001B}") model
+
+        Parser (Unescaped "") _ model _ ->
             model
 
-        Parser (Unescaped str) model update ->
+        Parser (Unescaped str) _ model update ->
             update (Print str) model
 
 
@@ -276,117 +289,239 @@ captureArguments list =
             []
 
 
+-- Check if a character is an unreserved character according to RFC 3986
+isUnreservedChar : Char -> Bool
+isUnreservedChar c =
+    Char.isAlphaNum c || c == '-' || c == '.' || c == '_' || c == '~'
+
+
+-- Check if a character is a reserved character according to RFC 3986
+isReservedChar : Char -> Bool
+isReservedChar c =
+    String.contains (String.fromChar c) ":/?#[]@!$&'()*+,;="
+
+
+-- Validate that a parameter follows HTTP spec but doesn't contain the
+-- hyperlink protocol delimiters
+validateSingleParam : String -> Bool
+validateSingleParam param =
+    -- For hyperlink parameters, we need to exclude : and ; as they're delimiters
+    -- in the hyperlink protocol, even though they're valid in HTTP URLs
+    String.all (\c ->
+        (isUnreservedChar c || (isReservedChar c && c /= ':' && c /= ';')) &&
+        Char.toCode c >= 32 && Char.toCode c <= 126
+    ) param
+
+
+processHyperlinkParts : String -> String -> List Action
+processHyperlinkParts params uri =
+    let
+        parsedParams = parseParams params
+        validParams = List.all validateSingleParam parsedParams
+
+        processedUri =
+            if String.any (\c -> Char.toCode c > 127) uri then
+                Url.percentEncode uri
+            else
+                uri
+    in
+    if not validParams then
+        []
+    else
+        [HyperlinkStart parsedParams processedUri]
+
+
+parseOSCWithState : Bool -> String -> (List Action, Bool)
+parseOSCWithState hasActiveLink str =
+    -- Specifically check for the hyperlink end sequence "8;;"
+    if str == "8;;" then
+        if hasActiveLink then
+            ([HyperlinkEnd], False)
+        else
+            ([], False)
+    -- Check for hyperlink start sequence "8;params;uri"
+    else if String.startsWith "8;" str then
+        -- Parse a standard hyperlink format
+        case String.split ";" str of
+            -- Should be ["8", params, uri]
+            "8" :: params :: uri :: [] ->
+                let
+                    actions = processHyperlinkParts params uri
+                in
+                (actions, not (List.isEmpty actions))
+            _ ->
+                ([], hasActiveLink)
+    else
+        ([], hasActiveLink)
+
+
+{-| Parse hyperlink parameters
+-}
+parseParams : String -> List String
+parseParams params =
+    if String.isEmpty params then
+        []
+    else
+        String.split ":" params
+
+
 parseChar : String -> Parser a -> Parser a
 parseChar char parser =
     case parser of
-        Parser (Unescaped str) model update ->
+        Parser (Unescaped str) hasLink model update ->
             case char of
                 "\u{000D}" ->
-                    Parser (Unescaped "") (update CarriageReturn (completeUnescaped parser)) update
+                    Parser (Unescaped "") hasLink (update CarriageReturn (completeUnescaped parser)) update
 
                 "\n" ->
-                    Parser (Unescaped "") (update Linebreak (completeUnescaped parser)) update
+                    Parser (Unescaped "") hasLink (update Linebreak (completeUnescaped parser)) update
 
                 "\u{001B}" ->
-                    Parser Escaped (completeUnescaped parser) update
+                    Parser Escaped hasLink (completeUnescaped parser) update
 
                 _ ->
-                    Parser (Unescaped (str ++ char)) model update
+                    Parser (Unescaped (str ++ char)) hasLink model update
 
-        Parser Escaped model update ->
+        Parser Escaped hasLink model update ->
             case char of
                 "[" ->
-                    Parser (CSI [] Nothing) model update
+                    Parser (CSI [] Nothing) hasLink model update
+
+                "]" ->
+                    Parser (OSC "") hasLink model update
+
+                "\\" ->
+                    case parser of
+                        Parser (OSCTerminating chars) _ _ _ ->
+                            -- Complete the OSC sequence (ESC+backslash terminator)
+                            let
+                                (actions, newHasLink) = parseOSCWithState hasLink chars
+                            in
+                            completeBracketed parser newHasLink actions
+
+                        _ ->
+                            -- Not an OSC terminator, just backslash
+                            Parser (Unescaped "\\") hasLink model update
 
                 _ ->
-                    Parser (Unescaped char) model update
+                    Parser (Unescaped char) hasLink model update
 
-        Parser (CSI codes currentCode) model update ->
+        Parser (OSC chars) hasLink model update ->
+            case char of
+                "\u{0007}" ->
+                    -- BEL character marks the end of an OSC sequence
+                    let
+                        (actions, newHasLink) = parseOSCWithState hasLink chars
+                    in
+                    completeBracketed parser newHasLink actions
+
+                "\u{001B}" ->
+                    -- Possibly the start of an ESC+backslash terminator
+                    Parser (OSCTerminating chars) hasLink model update
+
+                _ ->
+                    -- Accumulate characters in the OSC sequence
+                    Parser (OSC (chars ++ char)) hasLink model update
+
+        Parser (OSCTerminating chars) hasLink model update ->
+            case char of
+                "\\" ->
+                    -- ESC+backslash terminator found
+                    let
+                        (actions, newHasLink) = parseOSCWithState hasLink chars
+                    in
+                    completeBracketed parser newHasLink actions
+
+                _ ->
+                    -- Not a terminator, continue as a normal OSC sequence with ESC included
+                    Parser (OSC (chars ++ "\u{001B}" ++ char)) hasLink model update
+
+        Parser (CSI codes currentCode) hasLink model update ->
             case char of
                 "m" ->
-                    completeBracketed parser <|
+                    completeBracketed parser hasLink <|
                         captureArguments <|
                             List.map (Maybe.withDefault 0) (codes ++ [ currentCode ])
 
                 "A" ->
-                    completeBracketed parser
+                    completeBracketed parser hasLink
                         [ CursorUp (Maybe.withDefault 1 currentCode) ]
 
                 "B" ->
-                    completeBracketed parser
+                    completeBracketed parser hasLink
                         [ CursorDown (Maybe.withDefault 1 currentCode) ]
 
                 "C" ->
-                    completeBracketed parser
+                    completeBracketed parser hasLink
                         [ CursorForward (Maybe.withDefault 1 currentCode) ]
 
                 "D" ->
-                    completeBracketed parser
+                    completeBracketed parser hasLink
                         [ CursorBack (Maybe.withDefault 1 currentCode) ]
 
                 "E" ->
-                    completeBracketed parser
+                    completeBracketed parser hasLink
                         [ CursorDown (Maybe.withDefault 1 currentCode), CursorColumn 0 ]
 
                 "F" ->
-                    completeBracketed parser
+                    completeBracketed parser hasLink
                         [ CursorUp (Maybe.withDefault 1 currentCode), CursorColumn 0 ]
 
                 "G" ->
-                    completeBracketed parser
+                    completeBracketed parser hasLink
                         [ CursorColumn (Maybe.withDefault 0 currentCode) ]
 
                 "H" ->
-                    completeBracketed parser <|
+                    completeBracketed parser hasLink <|
                         cursorPosition (codes ++ [ currentCode ])
 
                 "J" ->
-                    completeBracketed parser
+                    completeBracketed parser hasLink
                         [ EraseDisplay (eraseMode (Maybe.withDefault 0 currentCode)) ]
 
                 "K" ->
-                    completeBracketed parser
+                    completeBracketed parser hasLink
                         [ EraseLine (eraseMode (Maybe.withDefault 0 currentCode)) ]
 
                 "f" ->
-                    completeBracketed parser <|
+                    completeBracketed parser hasLink <|
                         cursorPosition (codes ++ [ currentCode ])
 
                 "s" ->
-                    completeBracketed parser [ SaveCursorPosition ]
+                    completeBracketed parser hasLink [ SaveCursorPosition ]
 
                 "u" ->
-                    completeBracketed parser [ RestoreCursorPosition ]
+                    completeBracketed parser hasLink [ RestoreCursorPosition ]
 
                 ";" ->
-                    Parser (CSI (codes ++ [ currentCode ]) Nothing) model update
+                    Parser (CSI (codes ++ [ currentCode ]) Nothing) hasLink model update
 
                 c ->
                     case String.toInt c of
                         Just num ->
-                            Parser (CSI codes (Just ((Maybe.withDefault 0 currentCode * 10) + num))) model update
+                            Parser (CSI codes (Just ((Maybe.withDefault 0 currentCode * 10) + num))) hasLink model update
 
                         Nothing ->
-                            completeBracketed parser []
+                            completeBracketed parser hasLink []
 
 
 completeUnescaped : Parser a -> a
 completeUnescaped parser =
     case parser of
-        Parser (Unescaped "") model update ->
+        Parser (Unescaped "") _ model update ->
             model
 
-        Parser (Unescaped str) model update ->
+        Parser (Unescaped str) _ model update ->
             update (Print str) model
 
         -- should be impossible
-        Parser _ model _ ->
+        Parser _ _ model _ ->
             model
 
 
-completeBracketed : Parser a -> List Action -> Parser a
-completeBracketed (Parser _ model update) actions =
-    Parser (Unescaped "") (List.foldl update model actions) update
+completeBracketed : Parser a -> Bool -> List Action -> Parser a
+completeBracketed (Parser _ hasLink model update) newHasLink actions =
+    Parser (Unescaped "") newHasLink (List.foldl update model actions) update
 
 
 cursorPosition : List (Maybe Int) -> List Action
