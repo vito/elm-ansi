@@ -27,6 +27,8 @@ via `update`.
   - `style` is the style to be applied to any text that's printed
   - `remainder` is a partial ANSI escape sequence left around from an incomplete
     segment from the stream
+  - `currentLinkParams` contains optional hyperlink parameters
+  - `currentLinkUrl` is the URL of any active hyperlink
 
 -}
 type alias Model =
@@ -36,6 +38,8 @@ type alias Model =
     , savedPosition : Maybe CursorPosition
     , style : Style
     , remainder : String
+    , currentLinkParams : List String
+    , currentLinkUrl : Maybe String
     }
 
 
@@ -50,6 +54,8 @@ type alias Line =
 type alias Chunk =
     { text : String
     , style : Style
+    , linkParams : List String
+    , linkUrl : Maybe String
     }
 
 
@@ -111,6 +117,8 @@ init ldisc =
         , framed = False
         }
     , remainder = ""
+    , currentLinkParams = []
+    , currentLinkUrl = Nothing
     }
 
 
@@ -134,7 +142,7 @@ handleAction action model =
         Ansi.Print s ->
             let
                 chunk =
-                    Chunk s model.style
+                    Chunk s model.style model.currentLinkParams model.currentLinkUrl
 
                 updatedChunk =
                     writeChunk model.position.column chunk
@@ -188,7 +196,7 @@ handleAction action model =
                 Ansi.EraseToBeginning ->
                     let
                         chunk =
-                            Chunk (String.repeat model.position.column " ") model.style
+                            Chunk (String.repeat model.position.column " ") model.style model.currentLinkParams model.currentLinkUrl
 
                         updatedChunk =
                             writeChunk 0 chunk
@@ -204,6 +212,18 @@ handleAction action model =
 
                 Ansi.EraseAll ->
                     { model | lines = updateLine model.position.row (always blankLine) model.lines }
+
+        Ansi.HyperlinkStart params url ->
+            { model
+              | currentLinkParams = params
+              , currentLinkUrl = Just url
+            }
+
+        Ansi.HyperlinkEnd ->
+            { model
+              | currentLinkParams = []
+              , currentLinkUrl = Nothing
+            }
 
         _ ->
             { model | style = updateStyle action model.style }
@@ -302,7 +322,7 @@ writeChunk pos chunk line =
         addChunk chunk line
 
     else if pos > len then
-        addChunk chunk <| addChunk (spacing chunk.style (pos - len)) line
+        addChunk chunk <| addChunk (spacing chunk.style chunk.linkParams chunk.linkUrl (pos - len)) line
 
     else
         let
@@ -331,7 +351,7 @@ addChunk chunk line =
                 ( [ chunk ], clen )
 
             ( c :: cs, llen ) ->
-                if c.style == chunk.style then
+                if c.style == chunk.style && c.linkUrl == chunk.linkUrl && c.linkParams == chunk.linkParams then
                     ( { c | text = String.append c.text chunk.text } :: cs, llen + clen )
 
                 else
@@ -374,12 +394,12 @@ takeRight n line =
                 ( [ c ], clen )
 
             else
-                ( [ { c | text = String.right n c.text } ], n )
+                ( [ { c | text = String.right n c.text, style = c.style, linkParams = c.linkParams, linkUrl = c.linkUrl } ], n )
 
 
-spacing : Style -> Int -> Chunk
-spacing style len =
-    { style = style, text = String.repeat len " " }
+spacing : Style -> List String -> Maybe String -> Int -> Chunk
+spacing style params url len =
+    { style = style, text = String.repeat len " ", linkParams = params, linkUrl = url }
 
 
 takeLeft : Int -> Line -> Line
@@ -450,8 +470,20 @@ viewLine ( chunks, _ ) =
 
 viewChunk : Chunk -> Html.Html x
 viewChunk chunk =
-    Html.span (styleAttributes chunk.style)
-        [ Html.text chunk.text ]
+    -- If the chunk has a URL, wrap it in an <a> tag
+    case chunk.linkUrl of
+        Just url ->
+            Html.a
+                ([ Html.Attributes.href url
+                 , Html.Attributes.target "_blank"
+                 , Html.Attributes.style "text-decoration" "underline"
+                 , Html.Attributes.classList [("has-id", List.any (String.startsWith "id=") chunk.linkParams)]
+                 ] ++ styleAttributes chunk.style)
+                [ Html.text chunk.text ]
+
+        Nothing ->
+            Html.span (styleAttributes chunk.style)
+                [ Html.text chunk.text ]
 
 
 styleAttributes : Style -> List (Html.Attribute x)
