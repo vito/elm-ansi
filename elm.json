@@ -3,7 +3,7 @@
     "name": "vito/elm-ansi",
     "summary": "Parsing streams of text with ANSI escape sequences",
     "license": "MIT",
-    "version": "10.0.1",
+    "version": "11.0.0",
     "exposed-modules": [
         "Ansi",
         "Ansi.Log"
