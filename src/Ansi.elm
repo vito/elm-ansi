@@ -321,7 +321,14 @@ processHyperlinkParts params uri =
 
         processedUri =
             if String.any (\c -> Char.toCode c > 127) uri then
-                Url.percentEncode uri
+                String.toList uri
+                    |> List.map (\c ->
+                        if Char.toCode c > 127 then
+                            Url.percentEncode (String.fromChar c)
+                        else
+                            String.fromChar c
+                    )
+                    |> String.join ""
             else
                 uri
     in
@@ -341,14 +348,21 @@ parseOSCWithState hasActiveLink str =
             ([], False)
     -- Check for hyperlink start sequence "8;params;uri"
     else if String.startsWith "8;" str then
-        -- Parse a standard hyperlink format
+        -- Split only on first 2 semicolons to preserve semicolons in URI
         case String.split ";" str of
-            -- Should be ["8", params, uri]
-            "8" :: params :: uri :: [] ->
+            "8" :: params :: rest ->
+                -- URI might contain semicolons, so rejoin remaining parts
                 let
-                    actions = processHyperlinkParts params uri
+                    uri = String.join ";" rest
                 in
-                (actions, not (List.isEmpty actions))
+                if String.isEmpty uri then
+                    -- Invalid format: no URI provided
+                    ([], hasActiveLink)
+                else
+                    let
+                        actions = processHyperlinkParts params uri
+                    in
+                    (actions, not (List.isEmpty actions))
             _ ->
                 ([], hasActiveLink)
     else
@@ -391,17 +405,7 @@ parseChar char parser =
                     Parser (OSC "") hasLink model update
 
                 "\\" ->
-                    case parser of
-                        Parser (OSCTerminating chars) _ _ _ ->
-                            -- Complete the OSC sequence (ESC+backslash terminator)
-                            let
-                                (actions, newHasLink) = parseOSCWithState hasLink chars
-                            in
-                            completeBracketed parser newHasLink actions
-
-                        _ ->
-                            -- Not an OSC terminator, just backslash
-                            Parser (Unescaped "\\") hasLink model update
+                    Parser (Unescaped "\\") hasLink model update
 
                 _ ->
                     Parser (Unescaped char) hasLink model update
@@ -469,7 +473,7 @@ parseChar char parser =
 
                 "G" ->
                     completeBracketed parser hasLink
-                        [ CursorColumn (Maybe.withDefault 0 currentCode) ]
+                        [ CursorColumn (max 0 (Maybe.withDefault 1 currentCode - 1)) ]
 
                 "H" ->
                     completeBracketed parser hasLink <|
