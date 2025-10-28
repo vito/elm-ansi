@@ -70,6 +70,7 @@ type alias Style =
     , underline : Bool
     , blink : Bool
     , inverted : Bool
+    , strikethrough : Bool
     , fraktur : Bool
     , framed : Bool
     }
@@ -113,6 +114,7 @@ init ldisc =
         , underline = False
         , blink = False
         , inverted = False
+        , strikethrough = False
         , fraktur = False
         , framed = False
         }
@@ -285,6 +287,9 @@ updateStyle action style =
 
         Ansi.SetBlink b ->
             { style | blink = b }
+
+        Ansi.SetStrikethrough b ->
+            { style | strikethrough = b }
 
         Ansi.SetFraktur b ->
             { style | fraktur = b }
@@ -517,8 +522,14 @@ styleAttributes style =
             "normal"
         )
     , Html.Attributes.style "text-decoration"
-        (if style.underline then
+        (if style.underline && style.strikethrough then
+            "underline line-through"
+
+         else if style.underline then
             "underline"
+
+         else if style.strikethrough then
+            "line-through"
 
          else
             "none"

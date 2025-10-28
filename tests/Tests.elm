@@ -84,8 +84,10 @@ parsing =
                     , Ansi.Print "fast blink"
                     , Ansi.SetInverted True
                     , Ansi.Print "inverted"
+                    , Ansi.SetStrikethrough True
+                    , Ansi.Print "strikethrough"
                     ]
-                    (Ansi.parse "normal\u{001B}[1mbold\u{001B}[2mfaint\u{001B}[3mitalic\u{001B}[4munderline\u{001B}[5mblink\u{001B}[6mfast blink\u{001B}[7minverted")
+                    (Ansi.parse "normal\u{001B}[1mbold\u{001B}[2mfaint\u{001B}[3mitalic\u{001B}[4munderline\u{001B}[5mblink\u{001B}[6mfast blink\u{001B}[7minverted\u{001B}[9mstrikethrough")
         , test "resetting styles" <|
             \() ->
                 Expect.equal
@@ -98,6 +100,7 @@ parsing =
                     , Ansi.SetUnderline False
                     , Ansi.SetBlink False
                     , Ansi.SetInverted False
+                    , Ansi.SetStrikethrough False
                     , Ansi.SetFraktur False
                     , Ansi.SetFramed False
                     , Ansi.Print "reset"

@@ -41,6 +41,7 @@ type Action
     | SetUnderline Bool
     | SetBlink Bool
     | SetInverted Bool
+    | SetStrikethrough Bool
     | SetFraktur Bool
     | SetFramed Bool
     | Linebreak
@@ -587,6 +588,9 @@ codeActions code =
         7 ->
             [ SetInverted True ]
 
+        9 ->
+            [ SetStrikethrough True ]
+
         20 ->
             [ SetFraktur True ]
 
@@ -611,6 +615,9 @@ codeActions code =
 
         27 ->
             [ SetInverted False ]
+
+        29 ->
+            [ SetStrikethrough False ]
 
         30 ->
             [ SetForeground (Just Black) ]
@@ -734,6 +741,7 @@ reset =
     , SetUnderline False
     , SetBlink False
     , SetInverted False
+    , SetStrikethrough False
     , SetFraktur False
     , SetFramed False
     ]
