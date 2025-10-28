@@ -148,8 +148,8 @@ parsing =
                     , Ansi.CursorColumn 0
                     , Ansi.CursorUp 5
                     , Ansi.CursorColumn 0
-                    , Ansi.CursorColumn 1
-                    , Ansi.CursorColumn 50
+                    , Ansi.CursorColumn 0
+                    , Ansi.CursorColumn 49
                     ]
                     (Ansi.parse "\u{001B}[E\u{001B}[5F\u{001B}[1G\u{001B}[50G")
         , test "cursor position save/restore" <|
@@ -372,9 +372,18 @@ hyperlinkTests =
                             List.any (\chunk -> chunk.linkParams == ["id=test"]) idChunks
                     in
                     Expect.all
-                        [ \_ -> Expect.true "Should contain a chunk with the link URL" hasLink
-                        , \_ -> Expect.true "Should contain a red-styled link" hasStyledLink
-                        , \_ -> Expect.true "Should contain a chunk with id parameter" hasIdParam
+                        [ \_ ->
+                            hasLink
+                                |> Expect.equal True
+                                |> Expect.onFail "Should contain a chunk with the link URL"
+                        , \_ ->
+                            hasStyledLink
+                                |> Expect.equal True
+                                |> Expect.onFail "Should contain a red-styled link"
+                        , \_ ->
+                            hasIdParam
+                                |> Expect.equal True
+                                |> Expect.onFail "Should contain a chunk with id parameter"
                         ]
                         ()
 
@@ -395,6 +404,167 @@ hyperlinkTests =
                             List.filter (\chunk -> chunk.linkUrl /= Nothing) chunks
                     in
                     Expect.equal 2 (List.length linkChunks)
+            ]
+
+        , describe "URL Handling"
+            [ test "URL with semicolons in query string" <|
+                \() ->
+                    let
+                        result = Ansi.parse "\u{001B}]8;;http://example.com?a=1;b=2;c=3\u{0007}link\u{001B}]8;;\u{0007}"
+                    in
+                    Expect.equal
+                        [ Ansi.HyperlinkStart [] "http://example.com?a=1;b=2;c=3"
+                        , Ansi.Print "link"
+                        , Ansi.HyperlinkEnd
+                        ]
+                        result
+
+            , test "URL with semicolons and parameters" <|
+                \() ->
+                    let
+                        result = Ansi.parse "\u{001B}]8;id=test;http://example.com?foo=bar;baz=qux\u{0007}link\u{001B}]8;;\u{0007}"
+                    in
+                    Expect.equal
+                        [ Ansi.HyperlinkStart ["id=test"] "http://example.com?foo=bar;baz=qux"
+                        , Ansi.Print "link"
+                        , Ansi.HyperlinkEnd
+                        ]
+                        result
+
+            , test "URL with multiple semicolons in path and query" <|
+                \() ->
+                    let
+                        result = Ansi.parse "\u{001B}]8;;http://example.com/path;with;semicolons?q=a;b;c\u{0007}link\u{001B}]8;;\u{0007}"
+                    in
+                    Expect.equal
+                        [ Ansi.HyperlinkStart [] "http://example.com/path;with;semicolons?q=a;b;c"
+                        , Ansi.Print "link"
+                        , Ansi.HyperlinkEnd
+                        ]
+                        result
+
+            , test "URL with non-ASCII characters" <|
+                \() ->
+                    let
+                        result = Ansi.parse "\u{001B}]8;;http://example.com/café\u{0007}link\u{001B}]8;;\u{0007}"
+                    in
+                    Expect.equal
+                        [ Ansi.HyperlinkStart [] "http://example.com/caf%C3%A9"
+                        , Ansi.Print "link"
+                        , Ansi.HyperlinkEnd
+                        ]
+                        result
+
+            , test "URL with already percent-encoded content should not double-encode" <|
+                \() ->
+                    let
+                        -- URL already has %20, should not become %2520
+                        result = Ansi.parse "\u{001B}]8;;http://example.com/file%20name/café\u{0007}link\u{001B}]8;;\u{0007}"
+                    in
+                    Expect.equal
+                        [ Ansi.HyperlinkStart [] "http://example.com/file%20name/caf%C3%A9"
+                        , Ansi.Print "link"
+                        , Ansi.HyperlinkEnd
+                        ]
+                        result
+
+            , test "URL with mixed ASCII, percent-encoded, and non-ASCII" <|
+                \() ->
+                    let
+                        result = Ansi.parse "\u{001B}]8;;http://example.com/path%20one/中文/file%20two\u{0007}link\u{001B}]8;;\u{0007}"
+                    in
+                    Expect.equal
+                        [ Ansi.HyperlinkStart [] "http://example.com/path%20one/%E4%B8%AD%E6%96%87/file%20two"
+                        , Ansi.Print "link"
+                        , Ansi.HyperlinkEnd
+                        ]
+                        result
+            ]
+
+        , describe "Hyperlink State Management"
+            [ test "erased content should not inherit hyperlink state" <|
+                \() ->
+                    let
+                        model =
+                            List.foldl Ansi.Log.update (Ansi.Log.init Ansi.Log.Raw)
+                                [ "\u{001B}]8;;http://example.com\u{0007}link text here"
+                                , "\u{001B}[1K"  -- Erase to beginning
+                                ]
+
+                        firstLine =
+                            Array.get 0 model.lines |> Maybe.withDefault ([], 0)
+
+                        chunks =
+                            Tuple.first firstLine
+
+                        -- Find chunks that are just spaces (erased content)
+                        spaceChunks =
+                            List.filter (\chunk -> String.all (\c -> c == ' ') chunk.text) chunks
+
+                        -- Erased spaces should NOT have link URLs
+                        spacesHaveNoLinks =
+                            List.all (\chunk -> chunk.linkUrl == Nothing) spaceChunks
+                    in
+
+                        spacesHaveNoLinks
+                            |> Expect.equal True
+                            |> Expect.onFail "Erased spaces should not be hyperlinks"
+
+
+            , test "line erase with active link should clear link from erased area" <|
+                \() ->
+                    let
+                        model =
+                            List.foldl Ansi.Log.update (Ansi.Log.init Ansi.Log.Raw)
+                                [ "prefix\u{001B}]8;;http://example.com\u{0007}link"
+                                , "\u{001B}[6D"  -- Move cursor back 6
+                                , "\u{001B}[1K"  -- Erase to beginning
+                                ]
+
+                        firstLine =
+                            Array.get 0 model.lines |> Maybe.withDefault ([], 0)
+
+                        chunks =
+                            Tuple.first firstLine
+
+                        -- All space chunks should have no links
+                        allSpacesNoLinks =
+                            chunks
+                                |> List.filter (\chunk -> String.all (\c -> c == ' ') chunk.text)
+                                |> List.all (\chunk -> chunk.linkUrl == Nothing)
+                    in
+
+                    allSpacesNoLinks
+                        |> Expect.equal True
+                        |> Expect.onFail "Erased content should not be hyperlinked"
+
+            , test "multiple sequential links work correctly" <|
+                \() ->
+                    let
+                        result = Ansi.parse "\u{001B}]8;;http://link1.com\u{0007}first\u{001B}]8;;\u{0007} text \u{001B}]8;;http://link2.com\u{0007}second\u{001B}]8;;\u{0007}"
+                    in
+                    Expect.equal
+                        [ Ansi.HyperlinkStart [] "http://link1.com"
+                        , Ansi.Print "first"
+                        , Ansi.HyperlinkEnd
+                        , Ansi.Print " text "
+                        , Ansi.HyperlinkStart [] "http://link2.com"
+                        , Ansi.Print "second"
+                        , Ansi.HyperlinkEnd
+                        ]
+                        result
+
+            , test "hyperlink end without active link is ignored" <|
+                \() ->
+                    let
+                        result = Ansi.parse "text\u{001B}]8;;\u{0007} more text"
+                    in
+                    Expect.equal
+                        [ Ansi.Print "text"
+                        -- HyperlinkEnd should be silently ignored
+                        , Ansi.Print " more text"
+                        ]
+                        result
             ]
         ]
 
@@ -593,7 +763,7 @@ log =
         , test "cursor movement (not ANSI.SYS)" <|
             \() ->
                 assertWindowRendersAs Ansi.Log.Raw
-                    "\u{001B}[0mONE\u{000D}\n\u{001B}[0mtwo\u{000D}\n\u{001B}[0mxyree\u{000D}\n\u{001B}[0mfour\u{000D}\n\u{001B}[0mxyz"
+                    "\u{001B}[0mONE\u{000D}\n\u{001B}[0mtwo\u{000D}\n\u{001B}[0myhree\u{000D}\n\u{001B}[0mfour\u{000D}\n\u{001B}[0mxyz"
                     [ "one\u{000D}\ntwo\u{000D}\nthree\u{000D}\nfour\u{000D}\nxyz\u{000D}"
                     , "\u{001B}[4FONE"
                     , "\u{001B}[2Ex"

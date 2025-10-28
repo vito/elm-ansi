@@ -196,7 +196,7 @@ handleAction action model =
                 Ansi.EraseToBeginning ->
                     let
                         chunk =
-                            Chunk (String.repeat model.position.column " ") model.style model.currentLinkParams model.currentLinkUrl
+                            Chunk (String.repeat model.position.column " ") model.style [] Nothing
 
                         updatedChunk =
                             writeChunk 0 chunk
