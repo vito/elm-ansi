@@ -16,6 +16,7 @@ import Array exposing (Array)
 import Html
 import Html.Attributes
 import Html.Lazy
+import Regex
 import String
 
 
@@ -502,20 +503,22 @@ isZeroWidthFormat ucs =
     || ucs == 0xFFFF
 
 
-{-| Calculate display width of a character.
-Returns 0 for null/control/combining/format, 2 for wide, 1 for normal.
--}
-charDisplayWidth : Char -> Int
-charDisplayWidth char =
+unicodeCharWidth : Char -> Int
+unicodeCharWidth char =
     let
         ucs =
             Char.toCode char
     in
-    -- Fast path for ASCII/Latin
-    if ucs < 0x0300 then
-        if ucs == 0 then 0
-        else if ucs < 32 || (ucs >= 0x7F && ucs < 0xA0) || ucs == 0x00AD then 0
-        else 1
+    if ucs < doublewidthBounds.firstStart then
+        if isCombining ucs then
+            0
+        else if isZeroWidthFormat ucs then
+            0
+        else
+            1
+
+    else if ucs >= 0x1F300 && ucs <= 0x1F9FF then
+        2
 
     else if isDoublewidth ucs then
         2
@@ -530,14 +533,44 @@ charDisplayWidth char =
         1
 
 
-{-| Calculate display width of a string (terminal columns).
--}
+normalWidthRegex : Regex.Regex
+normalWidthRegex =
+    Maybe.withDefault Regex.never <|
+        Regex.fromString "^[\u{0020}-\u{007E}\u{00A0}-\u{00AC}\u{00AE}-\u{02FF}]+$"
+
+
 stringDisplayWidth : String -> Int
 stringDisplayWidth str =
     if String.isEmpty str then
         0
+    -- Fast path: if all characters have normal width (width=1), use String.length
+    else if Regex.contains normalWidthRegex str then
+        String.length str
+    -- General path: handles control chars, combining, and doublewidth
     else
-        String.foldl (\char acc -> acc + charDisplayWidth char) 0 str
+        stringDisplayWidthHelper str 0
+
+
+stringDisplayWidthHelper : String -> Int -> Int
+stringDisplayWidthHelper str width =
+    case String.uncons str of
+        Nothing ->
+            width
+
+        Just ( char, rest ) ->
+            let
+                ucs =
+                    Char.toCode char
+            in
+            -- Fast path for ASCII/Latin
+            if ucs < 0x0300 then
+                if ucs < 32 || (ucs >= 0x7F && ucs < 0xA0) || ucs == 0x00AD then
+                    stringDisplayWidthHelper rest width
+                else
+                    stringDisplayWidthHelper rest (width + 1)
+
+            else
+                stringDisplayWidthHelper rest (width + unicodeCharWidth char)
 
 
 writeChunk : Int -> Chunk -> Line -> Line
