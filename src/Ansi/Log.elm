@@ -591,7 +591,7 @@ addChunk chunk line =
                             c.text ++ chunk.text
 
                         mergedWidth =
-                            stringDisplayWidth mergedText
+                            c.cachedWidth + clen
                     in
                     ( { c | text = mergedText, cachedWidth = mergedWidth } :: cs, llen + clen )
 
