@@ -50,12 +50,14 @@ type alias Line =
 
 
 {-| A blob of text paired with the style that was configured at the time.
+Cached width stores the precomputed display width to avoid recalculation.
 -}
 type alias Chunk =
     { text : String
     , style : Style
     , linkParams : List String
     , linkUrl : Maybe String
+    , cachedWidth : Int
     }
 
 
@@ -144,14 +146,19 @@ handleAction action model =
         Ansi.Print s ->
             let
                 chunk =
-                    Chunk s model.style model.currentLinkParams model.currentLinkUrl
+                    { text = s
+                    , style = model.style
+                    , linkParams = model.currentLinkParams
+                    , linkUrl = model.currentLinkUrl
+                    , cachedWidth = stringDisplayWidth s
+                    }
 
                 updatedChunk =
                     writeChunk model.position.column chunk
             in
             { model
                 | lines = updateLine model.position.row updatedChunk model.lines
-                , position = moveCursor 0 (chunkLen chunk) model.position
+                , position = { row = model.position.row, column = model.position.column + chunk.cachedWidth }
             }
 
         Ansi.CarriageReturn ->
@@ -161,7 +168,7 @@ handleAction action model =
             handleAction (Ansi.Print "") <|
                 case model.lineDiscipline of
                     Raw ->
-                        { model | position = moveCursor 1 0 model.position }
+                        { model | position = { row = model.position.row + 1, column = model.position.column } }
 
                     Cooked ->
                         { model | position = CursorPosition (model.position.row + 1) 0 }
@@ -170,16 +177,16 @@ handleAction action model =
             { model | remainder = s }
 
         Ansi.CursorUp num ->
-            { model | position = moveCursor -num 0 model.position }
+            { model | position = { row = model.position.row - num, column = model.position.column } }
 
         Ansi.CursorDown num ->
-            { model | position = moveCursor num 0 model.position }
+            { model | position = { row = model.position.row + num, column = model.position.column } }
 
         Ansi.CursorForward num ->
-            { model | position = moveCursor 0 num model.position }
+            { model | position = { row = model.position.row, column = model.position.column + num } }
 
-        Ansi.CursorBack num ->
-            { model | position = moveCursor 0 -num model.position }
+        Ansi.CursorBackward num ->
+            { model | position = { row = model.position.row, column = model.position.column - num } }
 
         Ansi.CursorPosition row col ->
             { model | position = CursorPosition (row - 1) (col - 1) }
@@ -198,7 +205,12 @@ handleAction action model =
                 Ansi.EraseToBeginning ->
                     let
                         chunk =
-                            Chunk (String.repeat model.position.column " ") model.style [] Nothing
+                            { text = String.repeat model.position.column " "
+                            , style = model.style
+                            , linkParams = []
+                            , linkUrl = Nothing
+                            , cachedWidth = model.position.column
+                            }
 
                         updatedChunk =
                             writeChunk 0 chunk
@@ -229,11 +241,6 @@ handleAction action model =
 
         _ ->
             { model | style = updateStyle action model.style }
-
-
-moveCursor : Int -> Int -> CursorPosition -> CursorPosition
-moveCursor r c pos =
-    { pos | row = pos.row + r, column = pos.column + c }
 
 
 updateLine : Int -> (Line -> Line) -> Array Line -> Array Line
@@ -330,24 +337,23 @@ combiningRanges =
         ]
 
 
+-- Cached bounds for combining ranges
+combiningBounds : { firstStart : Int, lastEnd : Int, maxIdx : Int }
+combiningBounds =
+    { firstStart = 0x0300
+    , lastEnd = 0x1E8D6
+    , maxIdx = 46  -- 47 ranges total (0-46)
+    }
+
+
 {-| Binary search to check if character is combining (zero-width).
 -}
 isCombining : Int -> Bool
 isCombining ucs =
-    let
-        maxIdx =
-            Array.length combiningRanges - 1
-    in
-    case ( Array.get 0 combiningRanges, Array.get maxIdx combiningRanges ) of
-        ( Just ( firstStart, _ ), Just ( _, lastEnd ) ) ->
-            if ucs < firstStart || ucs > lastEnd then
-                False
-
-            else
-                bisearchCombining ucs 0 maxIdx
-
-        _ ->
-            False
+    if ucs < combiningBounds.firstStart || ucs > combiningBounds.lastEnd then
+        False
+    else
+        bisearchCombining ucs 0 combiningBounds.maxIdx
 
 
 bisearchCombining : Int -> Int -> Int -> Bool
@@ -424,25 +430,24 @@ doublewidthRanges =
         ]
 
 
+-- Cached bounds for doublewidth ranges
+doublewidthBounds : { firstStart : Int, lastEnd : Int, maxIdx : Int }
+doublewidthBounds =
+    { firstStart = 0x1100
+    , lastEnd = 0x3FFFD
+    , maxIdx = 119  -- 120 ranges total (0-119)
+    }
+
+
 {-| Check if character is in doublewidth table (2 columns).
 Uses binary search for O(log n) performance.
 -}
 isDoublewidth : Int -> Bool
 isDoublewidth ucs =
-    let
-        maxIdx =
-            Array.length doublewidthRanges - 1
-    in
-    case ( Array.get 0 doublewidthRanges, Array.get maxIdx doublewidthRanges ) of
-        ( Just ( firstStart, _ ), Just ( _, lastEnd ) ) ->
-            if ucs < firstStart || ucs > lastEnd then
-                False
-
-            else
-                bisearchDoublewidth ucs 0 maxIdx
-
-        _ ->
-            False
+    if ucs < doublewidthBounds.firstStart || ucs > doublewidthBounds.lastEnd then
+        False
+    else
+        bisearchDoublewidth ucs 0 doublewidthBounds.maxIdx
 
 
 bisearchDoublewidth : Int -> Int -> Int -> Bool
@@ -506,8 +511,8 @@ charDisplayWidth char =
         ucs =
             Char.toCode char
     in
+    -- Fast path for ASCII/Latin
     if ucs < 0x0300 then
-        -- Fast path for ASCII/Latin
         if ucs == 0 then 0
         else if ucs < 32 || (ucs >= 0x7F && ucs < 0xA0) || ucs == 0x00AD then 0
         else 1
@@ -535,22 +540,17 @@ stringDisplayWidth str =
         String.foldl (\char acc -> acc + charDisplayWidth char) 0 str
 
 
-chunkLen : Chunk -> Int
-chunkLen =
-    stringDisplayWidth << .text
-
-
 writeChunk : Int -> Chunk -> Line -> Line
 writeChunk pos chunk line =
     let
         len =
             lineLen line
 
-        afterLen =
-            len - (chunkLen chunk + pos)
+        clen =
+            chunk.cachedWidth
 
-        textChopped =
-            len - pos
+        afterLen =
+            len - (clen + pos)
     in
     if len == pos then
         addChunk chunk line
@@ -574,7 +574,7 @@ addChunk : Chunk -> Line -> Line
 addChunk chunk line =
     let
         clen =
-            chunkLen chunk
+            chunk.cachedWidth
     in
     if clen == 0 then
         line
@@ -586,7 +586,14 @@ addChunk chunk line =
 
             ( c :: cs, llen ) ->
                 if c.style == chunk.style && c.linkUrl == chunk.linkUrl && c.linkParams == chunk.linkParams then
-                    ( { c | text = String.append c.text chunk.text } :: cs, llen + clen )
+                    let
+                        mergedText =
+                            c.text ++ chunk.text
+
+                        mergedWidth =
+                            stringDisplayWidth mergedText
+                    in
+                    ( { c | text = mergedText, cachedWidth = mergedWidth } :: cs, llen + clen )
 
                 else
                     ( chunk :: c :: cs, llen + clen )
@@ -601,13 +608,20 @@ dropRight n line =
         ( c :: cs, llen ) ->
             let
                 clen =
-                    chunkLen c
+                    c.cachedWidth
             in
             if clen <= n then
                 dropRight (n - clen) ( cs, llen - clen )
 
             else
-                ( { c | text = String.dropRight n c.text } :: cs, llen - n )
+                let
+                    newText =
+                        String.dropRight n c.text
+
+                    newWidth =
+                        stringDisplayWidth newText
+                in
+                ( { c | text = newText, cachedWidth = newWidth } :: cs, llen - n )
 
 
 takeRight : Int -> Line -> Line
@@ -618,8 +632,7 @@ takeRight n line =
 
         ( c :: cs, llen ) ->
             let
-                clen =
-                    chunkLen c
+                clen = c.cachedWidth
             in
             if clen < n then
                 addChunk c (takeRight (n - clen) ( cs, llen - clen ))
@@ -628,12 +641,24 @@ takeRight n line =
                 ( [ c ], clen )
 
             else
-                ( [ { c | text = String.right n c.text, style = c.style, linkParams = c.linkParams, linkUrl = c.linkUrl } ], n )
+                let
+                    newText =
+                        String.right n c.text
+
+                    newWidth =
+                        stringDisplayWidth newText
+                in
+                ( [ { c | text = newText, style = c.style, linkParams = c.linkParams, linkUrl = c.linkUrl, cachedWidth = newWidth } ], n )
 
 
 spacing : Style -> List String -> Maybe String -> Int -> Chunk
 spacing style params url len =
-    { style = style, text = String.repeat len " ", linkParams = params, linkUrl = url }
+    { style = style
+    , text = String.repeat len " "
+    , linkParams = params
+    , linkUrl = url
+    , cachedWidth = len
+    }
 
 
 takeLeft : Int -> Line -> Line

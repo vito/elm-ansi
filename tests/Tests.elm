@@ -139,7 +139,7 @@ parsing =
                     [ Ansi.CursorUp 5
                     , Ansi.CursorDown 1
                     , Ansi.CursorForward 50
-                    , Ansi.CursorBack 1
+                    , Ansi.CursorBackward 1
                     , Ansi.CursorPosition 1 50
                     , Ansi.CursorPosition 50 1
                     ]
