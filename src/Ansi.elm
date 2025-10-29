@@ -49,7 +49,7 @@ type Action
     | CursorUp Int
     | CursorDown Int
     | CursorForward Int
-    | CursorBack Int
+    | CursorBackward Int
     | CursorPosition Int Int
     | CursorColumn Int
     | EraseDisplay EraseMode
@@ -125,7 +125,7 @@ parseInto : a -> (Action -> a -> a) -> String -> a
 parseInto model update ansi =
     completeParsing <|
         List.foldl parseChar (emptyParser model update) <|
-            String.split "" ansi
+            String.toList ansi
 
 
 completeParsing : Parser a -> a
@@ -171,91 +171,51 @@ encodeCode code =
 colorCode : Int -> Maybe Color
 colorCode code =
     case code of
-        0 ->
-            Just Black
-
-        1 ->
-            Just Red
-
-        2 ->
-            Just Green
-
-        3 ->
-            Just Yellow
-
-        4 ->
-            Just Blue
-
-        5 ->
-            Just Magenta
-
-        6 ->
-            Just Cyan
-
-        7 ->
-            Just White
-
-        8 ->
-            Just BrightBlack
-
-        9 ->
-            Just BrightRed
-
-        10 ->
-            Just BrightGreen
-
-        11 ->
-            Just BrightYellow
-
-        12 ->
-            Just BrightBlue
-
-        13 ->
-            Just BrightMagenta
-
-        14 ->
-            Just BrightCyan
-
-        15 ->
-            Just BrightWhite
+        0 -> Just Black
+        1 -> Just Red
+        2 -> Just Green
+        3 -> Just Yellow
+        4 -> Just Blue
+        5 -> Just Magenta
+        6 -> Just Cyan
+        7 -> Just White
+        8 -> Just BrightBlack
+        9 -> Just BrightRed
+        10 -> Just BrightGreen
+        11 -> Just BrightYellow
+        12 -> Just BrightBlue
+        13 -> Just BrightMagenta
+        14 -> Just BrightCyan
+        15 -> Just BrightWhite
 
         _ ->
-            if code >= 16 && code < 232 then
+            if code < 232 then
+                -- 6x6x6 RGB cube (codes 16-231, 216 colors)
                 let
-                    c =
-                        code - 16
-
-                    b =
-                        modBy 6 c
-
-                    g =
-                        modBy 6 (c // 6)
-
-                    r =
-                        modBy 6 ((c // 6) // 6)
-
-                    -- Scales [0,5] -> [0,255] (not uniformly)
-                    -- 0     1     2     3     4     5
-                    -- 0    95   135   175   215   255
-                    scale n =
-                        if n == 0 then
-                            0
-
-                        else
-                            55 + n * 40
+                    c = code - 16
+                    b = modBy 6 c
+                    g = modBy 6 (c // 6)
+                    r = c // 36  -- Division by 36 (6²) extracts red component
                 in
-                Just <| Custom (scale r) (scale g) (scale b)
+                Just <| Custom (scale6 r) (scale6 g) (scale6 b)
 
-            else if code >= 232 && code < 256 then
+            else if code < 256 then
+                -- Grayscale ramp (codes 232-255, 24 shades)
                 let
-                    -- scales [232,255] -> [8,238]
-                    c =
-                        (code - 232) * 10 + 8
+                    gray = (code - 232) * 10 + 8
                 in
-                Just <| Custom c c c
+                Just <| Custom gray gray gray
 
             else
                 Nothing
+
+
+{-| Scales [0,5] -> [0,255] (non-uniformly)
+0 -> 0, 1 -> 95, 2 -> 135, 3 -> 175, 4 -> 215, 5 -> 255
+-}
+scale6 : Int -> Int
+scale6 n =
+    if n == 0 then 0 else 55 + n * 40
 
 
 {-| Capture SGR arguments in pattern match
@@ -329,7 +289,7 @@ processHyperlinkParts params uri =
                         else
                             String.fromChar c
                     )
-                    |> String.join ""
+                    |> String.concat
             else
                 uri
     in
@@ -380,57 +340,57 @@ parseParams params =
         String.split ":" params
 
 
-parseChar : String -> Parser a -> Parser a
-parseChar char parser =
+parseChar : Char -> Parser a -> Parser a
+parseChar c parser =
     case parser of
         Parser (Unescaped str) hasLink model update ->
-            case char of
-                "\u{000D}" ->
+            case c of
+                '\u{000D}' ->
                     Parser (Unescaped "") hasLink (update CarriageReturn (completeUnescaped parser)) update
 
-                "\n" ->
+                '\n' ->
                     Parser (Unescaped "") hasLink (update Linebreak (completeUnescaped parser)) update
 
-                "\u{001B}" ->
+                '\u{001B}' ->
                     Parser Escaped hasLink (completeUnescaped parser) update
 
                 _ ->
-                    Parser (Unescaped (str ++ char)) hasLink model update
+                    Parser (Unescaped (str ++ String.fromChar c)) hasLink model update
 
         Parser Escaped hasLink model update ->
-            case char of
-                "[" ->
+            case c of
+                '[' ->
                     Parser (CSI [] Nothing) hasLink model update
 
-                "]" ->
+                ']' ->
                     Parser (OSC "") hasLink model update
 
-                "\\" ->
+                '\\' ->
                     Parser (Unescaped "\\") hasLink model update
 
                 _ ->
-                    Parser (Unescaped char) hasLink model update
+                    Parser (Unescaped (String.fromChar c)) hasLink model update
 
         Parser (OSC chars) hasLink model update ->
-            case char of
-                "\u{0007}" ->
+            case c of
+                '\u{0007}' ->
                     -- BEL character marks the end of an OSC sequence
                     let
                         (actions, newHasLink) = parseOSCWithState hasLink chars
                     in
                     completeBracketed parser newHasLink actions
 
-                "\u{001B}" ->
+                '\u{001B}' ->
                     -- Possibly the start of an ESC+backslash terminator
                     Parser (OSCTerminating chars) hasLink model update
 
                 _ ->
                     -- Accumulate characters in the OSC sequence
-                    Parser (OSC (chars ++ char)) hasLink model update
+                    Parser (OSC (chars ++ String.fromChar c)) hasLink model update
 
         Parser (OSCTerminating chars) hasLink model update ->
-            case char of
-                "\\" ->
+            case c of
+                '\\' ->
                     -- ESC+backslash terminator found
                     let
                         (actions, newHasLink) = parseOSCWithState hasLink chars
@@ -439,75 +399,79 @@ parseChar char parser =
 
                 _ ->
                     -- Not a terminator, continue as a normal OSC sequence with ESC included
-                    Parser (OSC (chars ++ "\u{001B}" ++ char)) hasLink model update
+                    Parser (OSC (chars ++ "\u{001B}" ++ String.fromChar c)) hasLink model update
 
         Parser (CSI codes currentCode) hasLink model update ->
-            case char of
-                "m" ->
+            case c of
+                'm' ->
                     completeBracketed parser hasLink <|
                         captureArguments <|
                             List.map (Maybe.withDefault 0) (codes ++ [ currentCode ])
 
-                "A" ->
+                'A' ->
                     completeBracketed parser hasLink
                         [ CursorUp (Maybe.withDefault 1 currentCode) ]
 
-                "B" ->
+                'B' ->
                     completeBracketed parser hasLink
                         [ CursorDown (Maybe.withDefault 1 currentCode) ]
 
-                "C" ->
+                'C' ->
                     completeBracketed parser hasLink
                         [ CursorForward (Maybe.withDefault 1 currentCode) ]
 
-                "D" ->
+                'D' ->
                     completeBracketed parser hasLink
-                        [ CursorBack (Maybe.withDefault 1 currentCode) ]
+                        [ CursorBackward (Maybe.withDefault 1 currentCode) ]
 
-                "E" ->
+                'E' ->
                     completeBracketed parser hasLink
                         [ CursorDown (Maybe.withDefault 1 currentCode), CursorColumn 0 ]
 
-                "F" ->
+                'F' ->
                     completeBracketed parser hasLink
                         [ CursorUp (Maybe.withDefault 1 currentCode), CursorColumn 0 ]
 
-                "G" ->
+                'G' ->
                     completeBracketed parser hasLink
                         [ CursorColumn (max 0 (Maybe.withDefault 1 currentCode - 1)) ]
 
-                "H" ->
+                'H' ->
                     completeBracketed parser hasLink <|
                         cursorPosition (codes ++ [ currentCode ])
 
-                "J" ->
+                'J' ->
                     completeBracketed parser hasLink
                         [ EraseDisplay (eraseMode (Maybe.withDefault 0 currentCode)) ]
 
-                "K" ->
+                'K' ->
                     completeBracketed parser hasLink
                         [ EraseLine (eraseMode (Maybe.withDefault 0 currentCode)) ]
 
-                "f" ->
+                'f' ->
                     completeBracketed parser hasLink <|
                         cursorPosition (codes ++ [ currentCode ])
 
-                "s" ->
+                's' ->
                     completeBracketed parser hasLink [ SaveCursorPosition ]
 
-                "u" ->
+                'u' ->
                     completeBracketed parser hasLink [ RestoreCursorPosition ]
 
-                ";" ->
+                ';' ->
                     Parser (CSI (codes ++ [ currentCode ]) Nothing) hasLink model update
 
-                c ->
-                    case String.toInt c of
-                        Just num ->
-                            Parser (CSI codes (Just ((Maybe.withDefault 0 currentCode * 10) + num))) hasLink model update
-
-                        Nothing ->
-                            completeBracketed parser hasLink []
+                _ ->
+                    if Char.isDigit c then
+                        let
+                            digit = Char.toCode c - 48  -- '0' is ASCII 48
+                            newCode = case currentCode of
+                                Nothing -> digit
+                                Just n -> n * 10 + digit
+                        in
+                        Parser (CSI codes (Just newCode)) hasLink model update
+                    else
+                        completeBracketed parser hasLink []
 
 
 completeUnescaped : Parser a -> a

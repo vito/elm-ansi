@@ -1,4 +1,4 @@
-module Tests exposing (all, assertWindowRendersAs, colorCode, esc, log, parsing, renderChunk, renderLine, renderWindow, styleFlags)
+module Tests exposing (all, assertWindowRendersAs, colorCode, displayWidthTests, esc, log, parsing, renderChunk, renderLine, renderWindow, styleFlags)
 
 import Ansi
 import Ansi.Log
@@ -11,7 +11,7 @@ import Test exposing (..)
 
 all : Test
 all =
-    describe "ANSI" [ parsing, log, hyperlinkTests ]
+    describe "ANSI" [ parsing, log, hyperlinkTests, displayWidthTests ]
 
 
 parsing : Test
@@ -139,7 +139,7 @@ parsing =
                     [ Ansi.CursorUp 5
                     , Ansi.CursorDown 1
                     , Ansi.CursorForward 50
-                    , Ansi.CursorBack 1
+                    , Ansi.CursorBackward 1
                     , Ansi.CursorPosition 1 50
                     , Ansi.CursorPosition 50 1
                     ]
@@ -795,4 +795,290 @@ log =
                     , "onetwo\u{001B}[3D\u{001B}[1KTWO\u{000D}\n"
                     , "onetwo\u{001B}[2KTHREEFOUR\u{000D}\n"
                     ]
+        ]
+
+
+displayWidthTests : Test
+displayWidthTests =
+    describe "Display Width Calculation"
+        [ describe "Basic ASCII"
+            [ test "ASCII characters are 1 column" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        updated = Ansi.Log.update "Hello" model
+                        line = Array.get 0 updated.lines
+                    in
+                    case line of
+                        Just (_, width) ->
+                            Expect.equal 5 width
+                        Nothing ->
+                            Expect.fail "No line created"
+            , test "Numbers are 1 column each" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        updated = Ansi.Log.update "12345" model
+                        line = Array.get 0 updated.lines
+                    in
+                    case line of
+                        Just (_, width) ->
+                            Expect.equal 5 width
+                        Nothing ->
+                            Expect.fail "No line created"
+            ]
+        , describe "Emoji (2 columns)"
+            [ test "Coffee emoji ☕ is 2 columns" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        updated = Ansi.Log.update "☕" model
+                        line = Array.get 0 updated.lines
+                    in
+                    case line of
+                        Just (_, width) ->
+                            Expect.equal 2 width
+                        Nothing ->
+                            Expect.fail "No line created"
+            , test "Rocket emoji 🚀 is 2 columns" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        updated = Ansi.Log.update "🚀" model
+                        line = Array.get 0 updated.lines
+                    in
+                    case line of
+                        Just (_, width) ->
+                            Expect.equal 2 width
+                        Nothing ->
+                            Expect.fail "No line created"
+            , test "Multiple emoji" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        updated = Ansi.Log.update "☕🚀🎉" model
+                        line = Array.get 0 updated.lines
+                    in
+                    case line of
+                        Just (_, width) ->
+                            Expect.equal 6 width  -- 2 + 2 + 2
+                        Nothing ->
+                            Expect.fail "No line created"
+            , test "Emoji mixed with ASCII" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        updated = Ansi.Log.update "Hi ☕ there" model
+                        line = Array.get 0 updated.lines
+                    in
+                    case line of
+                        Just (_, width) ->
+                            Expect.equal 11 width  -- 3 + 2 + 6
+                        Nothing ->
+                            Expect.fail "No line created"
+            ]
+        , describe "CJK Characters (2 columns)"
+            [ test "Chinese characters are 2 columns each" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        updated = Ansi.Log.update "你好" model
+                        line = Array.get 0 updated.lines
+                    in
+                    case line of
+                        Just (_, width) ->
+                            Expect.equal 4 width  -- 2 + 2
+                        Nothing ->
+                            Expect.fail "No line created"
+            , test "Japanese Hiragana are 2 columns each" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        updated = Ansi.Log.update "こんにちは" model
+                        line = Array.get 0 updated.lines
+                    in
+                    case line of
+                        Just (_, width) ->
+                            Expect.equal 10 width  -- 5 chars × 2 columns
+                        Nothing ->
+                            Expect.fail "No line created"
+            , test "Korean Hangul syllables are 2 columns each" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        updated = Ansi.Log.update "한글" model
+                        line = Array.get 0 updated.lines
+                    in
+                    case line of
+                        Just (_, width) ->
+                            Expect.equal 4 width  -- 2 + 2
+                        Nothing ->
+                            Expect.fail "No line created"
+            ]
+        , describe "Fullwidth Forms (2 columns)"
+            [ test "Fullwidth ASCII letter is 2 columns" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        updated = Ansi.Log.update "Ａ" model
+                        line = Array.get 0 updated.lines
+                    in
+                    case line of
+                        Just (_, width) ->
+                            Expect.equal 2 width
+                        Nothing ->
+                            Expect.fail "No line created"
+            , test "Fullwidth number is 2 columns" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        updated = Ansi.Log.update "１２３" model
+                        line = Array.get 0 updated.lines
+                    in
+                    case line of
+                        Just (_, width) ->
+                            Expect.equal 6 width  -- 3 chars × 2 columns
+                        Nothing ->
+                            Expect.fail "No line created"
+            ]
+        , describe "Combining Characters (0 columns)"
+            [ test "Combining accent e + ́ displays as 1 column" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        -- é as combining: e (U+0065) + combining acute (U+0301)
+                        updated = Ansi.Log.update "e\u{0301}" model
+                        line = Array.get 0 updated.lines
+                    in
+                    case line of
+                        Just (_, width) ->
+                            Expect.equal 1 width  -- e=1, combining=0
+                        Nothing ->
+                            Expect.fail "No line created"
+            , test "café with combining accent" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        -- café: c + a + f + e + combining-acute
+                        updated = Ansi.Log.update "cafe\u{0301}" model
+                        line = Array.get 0 updated.lines
+                    in
+                    case line of
+                        Just (_, width) ->
+                            Expect.equal 4 width  -- c=1, a=1, f=1, e=1, combining=0
+                        Nothing ->
+                            Expect.fail "No line created"
+            ]
+        , describe "Zero-Width Characters"
+            [ test "Zero-width space is 0 columns" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        updated = Ansi.Log.update "a\u{200B}b" model
+                        line = Array.get 0 updated.lines
+                    in
+                    case line of
+                        Just (_, width) ->
+                            Expect.equal 2 width  -- a=1, zero-width=0, b=1
+                        Nothing ->
+                            Expect.fail "No line created"
+            , test "Zero-width joiner is 0 columns" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        updated = Ansi.Log.update "a\u{200D}b" model
+                        line = Array.get 0 updated.lines
+                    in
+                    case line of
+                        Just (_, width) ->
+                            Expect.equal 2 width  -- a=1, ZWJ=0, b=1
+                        Nothing ->
+                            Expect.fail "No line created"
+            ]
+        , describe "Control Characters (0 columns)"
+            [ test "NULL character is 0 columns" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        updated = Ansi.Log.update "a\u{0000}b" model
+                        line = Array.get 0 updated.lines
+                    in
+                    case line of
+                        Just (_, width) ->
+                            Expect.equal 2 width  -- a=1, NULL=0, b=1
+                        Nothing ->
+                            Expect.fail "No line created"
+            ]
+        , describe "Mixed Content"
+            [ test "ASCII + emoji + CJK" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        updated = Ansi.Log.update "Hi ☕ 你好" model
+                        line = Array.get 0 updated.lines
+                    in
+                    case line of
+                        Just (_, width) ->
+                            Expect.equal 10 width  -- H=1, i=1, space=1, ☕=2, space=1, 你=2, 好=2
+                        Nothing ->
+                            Expect.fail "No line created"
+            , test "Real-world example: Rich box message" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        updated = Ansi.Log.update "Even the price of a ☕ can brighten my day!" model
+                        line = Array.get 0 updated.lines
+                    in
+                    case line of
+                        Just (_, width) ->
+                            Expect.equal 43 width  -- 41 ASCII + 2 for emoji
+                        Nothing ->
+                            Expect.fail "No line created"
+            , test "Complex mix with combining chars" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        -- "café ☕ 你好" with combining é
+                        updated = Ansi.Log.update "cafe\u{0301} ☕ 你好" model
+                        line = Array.get 0 updated.lines
+                    in
+                    case line of
+                        Just (_, width) ->
+                            Expect.equal 12 width  -- cafe=4, combining=0, space=1, ☕=2, space=1, 你好=4
+                        Nothing ->
+                            Expect.fail "No line created"
+            ]
+        , describe "Edge Cases"
+            [ test "Empty string" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        updated = Ansi.Log.update "" model
+                    in
+                    Expect.equal 0 (Array.length updated.lines)
+            , test "Only spaces" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        updated = Ansi.Log.update "     " model
+                        line = Array.get 0 updated.lines
+                    in
+                    case line of
+                        Just (_, width) ->
+                            Expect.equal 5 width
+                        Nothing ->
+                            Expect.fail "No line created"
+            , test "Only emoji" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        updated = Ansi.Log.update "🎉🎉🎉" model
+                        line = Array.get 0 updated.lines
+                    in
+                    case line of
+                        Just (_, width) ->
+                            Expect.equal 6 width  -- 3 emoji × 2 columns
+                        Nothing ->
+                            Expect.fail "No line created"
+            ]
         ]
