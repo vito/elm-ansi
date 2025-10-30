@@ -514,6 +514,94 @@ parsing =
                     , Ansi.Print "after"
                     ]
                     (Ansi.parse "before\u{001B}[38;5;256mafter")
+        , test "CSI with < parameter marker is properly ignored" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.Print "before"
+                    , Ansi.Print "after"
+                    ]
+                    (Ansi.parse "before\u{001B}[<1;2;3mafter")
+        , test "CSI with = parameter marker is properly ignored" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.Print "before"
+                    , Ansi.Print "after"
+                    ]
+                    (Ansi.parse "before\u{001B}[=5cafter")
+        , test "CSI with > parameter marker is properly ignored" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.Print "before"
+                    , Ansi.Print "after"
+                    ]
+                    (Ansi.parse "before\u{001B}[>cafter")
+        , test "CSI with ? parameter marker is properly ignored" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.Print "before"
+                    , Ansi.Print "after"
+                    ]
+                    (Ansi.parse "before\u{001B}[?1003lafter")
+        , test "CSI < marker does not affect normal sequences" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.SetForeground (Just Ansi.Red)
+                    , Ansi.Print "red"
+                    , Ansi.Print "ignored"
+                    , Ansi.SetForeground (Just Ansi.Blue)
+                    , Ansi.Print "blue"
+                    ]
+                    (Ansi.parse "\u{001B}[31mred\u{001B}[<10;20Mignored\u{001B}[34mblue")
+        , test "CSI > marker with parameters is properly ignored" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.Print "text"
+                    , Ansi.Print "more"
+                    ]
+                    (Ansi.parse "text\u{001B}[>1;2;3;4cmore")
+        , test "CSI = marker with parameters is properly ignored" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.Print "text"
+                    , Ansi.Print "more"
+                    ]
+                    (Ansi.parse "text\u{001B}[=7;8;9cmore")
+        , test "CSI ? marker in middle of sequence is ignored" <|
+            \() ->
+                -- '?' should only be valid at start; if it appears after digits, ignore the whole sequence
+                Expect.equal
+                    [ Ansi.Print "text"
+                    , Ansi.Print "more"
+                    ]
+                    (Ansi.parse "text\u{001B}[1?2mmore")
+        , test "Multiple CSI sequences with different markers" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.SetBold True
+                    , Ansi.Print "bold"
+                    , Ansi.Print "ignored1"
+                    , Ansi.SetForeground (Just Ansi.Green)
+                    , Ansi.Print "green"
+                    , Ansi.Print "ignored2"
+                    , Ansi.SetBlink True
+                    , Ansi.Print "blink"
+                    ]
+                    (Ansi.parse "\u{001B}[1mbold\u{001B}[<5Mignored1\u{001B}[32mgreen\u{001B}[>1cignored2\u{001B}[5mblink")
+        , test "CSI marker in remainder (incomplete sequence)" <|
+            \() ->
+                -- Incomplete sequence with marker should be preserved in Remainder
+                Expect.equal
+                    [ Ansi.Print "text"
+                    , Ansi.Remainder "\u{001B}[<12"
+                    ]
+                    (Ansi.parse "text\u{001B}[<12")
+        , test "CSI marker followed by semicolon" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.Print "before"
+                    , Ansi.Print "after"
+                    ]
+                    (Ansi.parse "before\u{001B}[>;1;2mafter")
         ]
 
 

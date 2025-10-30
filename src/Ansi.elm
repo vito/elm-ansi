@@ -96,10 +96,17 @@ type Parser a
 
 type ParserState
     = Escaped
-    | CSI (List (Maybe Int)) (Maybe Int)
+    | CSI (Maybe ParameterMarker) (List (Maybe Int)) (Maybe Int)
     | OSC String
     | OSCTerminating String
     | Unescaped String
+
+
+type ParameterMarker
+    = LessThan      -- < (0x3C)
+    | Equals        -- = (0x3D)
+    | GreaterThan   -- > (0x3E)
+    | Question      -- ? (0x3F)
 
 
 emptyParser : a -> (Action -> a -> a) -> Parser a
@@ -134,8 +141,16 @@ completeParsing parser =
         Parser Escaped _ model update ->
             update (Remainder "\u{001B}") model
 
-        Parser (CSI codes currentCode) _ model update ->
-            update (Remainder <| "\u{001B}[" ++ encodeCodes (codes ++ [ currentCode ])) model
+        Parser (CSI marker codes currentCode) _ model update ->
+            let
+                markerStr = case marker of
+                    Just LessThan -> "<"
+                    Just Equals -> "="
+                    Just GreaterThan -> ">"
+                    Just Question -> "?"
+                    Nothing -> ""
+            in
+            update (Remainder <| "\u{001B}[" ++ markerStr ++ encodeCodes (codes ++ [ currentCode ])) model
 
         Parser (OSC chars) _ model update ->
             update (Remainder <| "\u{001B}]" ++ chars) model
@@ -390,7 +405,7 @@ parseChar c parser =
         Parser Escaped hasLink model update ->
             case c of
                 '[' ->
-                    Parser (CSI [] Nothing) hasLink model update
+                    Parser (CSI Nothing [] Nothing) hasLink model update
 
                 ']' ->
                     Parser (OSC "") hasLink model update
@@ -431,7 +446,55 @@ parseChar c parser =
                     -- Not a terminator, continue as a normal OSC sequence with ESC included
                     Parser (OSC (chars ++ "\u{001B}" ++ String.fromChar c)) hasLink model update
 
-        Parser (CSI codes currentCode) hasLink model update ->
+        Parser (CSI marker codes currentCode) hasLink model update ->
+            if marker == Nothing && codes == [] && currentCode == Nothing then
+                case c of
+                    '<' ->
+                        Parser (CSI (Just LessThan) [] Nothing) hasLink model update
+
+                    '=' ->
+                        Parser (CSI (Just Equals) [] Nothing) hasLink model update
+
+                    '>' ->
+                        Parser (CSI (Just GreaterThan) [] Nothing) hasLink model update
+
+                    '?' ->
+                        Parser (CSI (Just Question) [] Nothing) hasLink model update
+
+                    _ ->
+                        -- Not a parameter marker, process as normal CSI character
+                        handleCSICommand c marker codes currentCode hasLink model update parser
+            else
+                -- We already have a marker or parameters, process normally
+                handleCSICommand c marker codes currentCode hasLink model update parser
+
+
+-- Helper function to handle CSI command characters
+handleCSICommand : Char -> Maybe ParameterMarker -> List (Maybe Int) -> Maybe Int -> Bool -> a -> (Action -> a -> a) -> Parser a -> Parser a
+handleCSICommand c marker codes currentCode hasLink model update parser =
+    -- If we have a parameter marker, this is a private/experimental sequence
+    -- We consume it but don't execute any actions (per ANSI standard)
+    case marker of
+        Just _ ->
+            -- Any letter terminates the sequence, but we produce no actions
+            if Char.isAlpha c then
+                completeBracketed parser hasLink []
+            else if c == ';' then
+                Parser (CSI marker (codes ++ [ currentCode ]) Nothing) hasLink model update
+            else if Char.isDigit c then
+                let
+                    digit = Char.toCode c - 48
+                    newCode = case currentCode of
+                        Nothing -> digit
+                        Just n -> n * 10 + digit
+                in
+                Parser (CSI marker codes (Just newCode)) hasLink model update
+            else
+                -- Unknown character in private sequence, discard
+                completeBracketed parser hasLink []
+
+        Nothing ->
+            -- No marker means standard CSI sequence, process normally
             case c of
                 'm' ->
                     completeBracketed parser hasLink <|
@@ -489,13 +552,19 @@ parseChar c parser =
                     completeBracketed parser hasLink [ RestoreCursorPosition ]
 
                 ';' ->
-                    Parser (CSI (codes ++ [ currentCode ]) Nothing) hasLink model update
+                    Parser (CSI marker (codes ++ [ currentCode ]) Nothing) hasLink model update
+
+                '<' ->
+                    Parser (CSI (Just LessThan) codes currentCode) hasLink model update
+
+                '=' ->
+                    Parser (CSI (Just Equals) codes currentCode) hasLink model update
+
+                '>' ->
+                    Parser (CSI (Just GreaterThan) codes currentCode) hasLink model update
 
                 '?' ->
-                    -- Private marker (e.g., ESC[?1003l for mouse tracking)
-                    -- Ignore it and continue parsing - we'll discard private sequences
-                    -- since we don't implement them
-                    parser
+                    Parser (CSI (Just Question) codes currentCode) hasLink model update
 
                 _ ->
                     if Char.isDigit c then
@@ -505,10 +574,11 @@ parseChar c parser =
                                 Nothing -> digit
                                 Just n -> n * 10 + digit
                         in
-                        Parser (CSI codes (Just newCode)) hasLink model update
+                        Parser (CSI marker codes (Just newCode)) hasLink model update
                     else
-                        -- Any non-digit character (letter or otherwise) terminates CSI
+                        -- Any non-digit, non-semicolon character (letter or otherwise) terminates CSI
                         -- Unknown/unrecognized commands are discarded per DEC/VT100 behavior
+                        -- Private sequences (with markers) that we don't recognize are also discarded
                         completeBracketed parser hasLink []
 
 
