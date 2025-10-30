@@ -646,6 +646,92 @@ parsing =
                     , Ansi.Print "text"
                     ]
                     (Ansi.parse "\u{001B}[1mbold\u{001B}(Btext")
+        , test "ESC 7 saves cursor position" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.Print "text"
+                    , Ansi.SaveCursorPosition
+                    , Ansi.Print "more"
+                    ]
+                    (Ansi.parse "text\u{001B}7more")
+        , test "ESC 8 restores cursor position" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.Print "text"
+                    , Ansi.RestoreCursorPosition
+                    , Ansi.Print "more"
+                    ]
+                    (Ansi.parse "text\u{001B}8more")
+        , test "ESC M reverse index (cursor up)" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.Print "text"
+                    , Ansi.CursorUp 1
+                    , Ansi.Print "more"
+                    ]
+                    (Ansi.parse "text\u{001B}Mmore")
+        , test "ESC D index (cursor down)" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.Print "text"
+                    , Ansi.CursorDown 1
+                    , Ansi.Print "more"
+                    ]
+                    (Ansi.parse "text\u{001B}Dmore")
+        , test "ESC E next line (CR + LF)" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.Print "text"
+                    , Ansi.CarriageReturn
+                    , Ansi.Linebreak
+                    , Ansi.Print "more"
+                    ]
+                    (Ansi.parse "text\u{001B}Emore")
+        , test "ESC = keypad application mode (ignored)" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.Print "before"
+                    , Ansi.Print "after"
+                    ]
+                    (Ansi.parse "before\u{001B}=after")
+        , test "ESC > keypad numeric mode (ignored)" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.Print "before"
+                    , Ansi.Print "after"
+                    ]
+                    (Ansi.parse "before\u{001B}>after")
+        , test "ESC c full reset (ignored)" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.Print "before"
+                    , Ansi.Print "after"
+                    ]
+                    (Ansi.parse "before\u{001B}cafter")
+        , test "ESC H tab set (ignored)" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.Print "before"
+                    , Ansi.Print "after"
+                    ]
+                    (Ansi.parse "before\u{001B}Hafter")
+        , test "multiple single-char escapes in sequence" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.SaveCursorPosition
+                    , Ansi.Print "text"
+                    , Ansi.RestoreCursorPosition
+                    ]
+                    (Ansi.parse "\u{001B}7text\u{001B}8")
+        , test "single-char escapes mixed with CSI" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.SaveCursorPosition
+                    , Ansi.SetBold True
+                    , Ansi.Print "bold"
+                    , Ansi.RestoreCursorPosition
+                    ]
+                    (Ansi.parse "\u{001B}7\u{001B}[1mbold\u{001B}8")
         ]
 
 

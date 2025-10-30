@@ -426,6 +426,33 @@ parseChar c parser =
                 '+' ->
                     Parser CharsetDesignation hasLink model update
 
+                '7' ->
+                    Parser (Unescaped "") hasLink (update SaveCursorPosition model) update
+
+                '8' ->
+                    Parser (Unescaped "") hasLink (update RestoreCursorPosition model) update
+
+                'M' ->
+                    Parser (Unescaped "") hasLink (update (CursorUp 1) model) update
+
+                'D' ->
+                    Parser (Unescaped "") hasLink (update (CursorDown 1) model) update
+
+                'E' ->
+                    Parser (Unescaped "") hasLink (update Linebreak (update CarriageReturn model)) update
+
+                '=' ->
+                    Parser (Unescaped "") hasLink model update
+
+                '>' ->
+                    Parser (Unescaped "") hasLink model update
+
+                'c' ->
+                    Parser (Unescaped "") hasLink model update
+
+                'H' ->
+                    Parser (Unescaped "") hasLink model update
+
                 '\\' ->
                     Parser (Unescaped "\\") hasLink model update
 
