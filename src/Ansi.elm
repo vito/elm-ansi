@@ -82,8 +82,6 @@ type Color
     | Custom Int Int Int
 
 
-{-| Method to erase the display or line.
--}
 type EraseMode
     = EraseToBeginning
     | EraseToEnd
@@ -117,11 +115,6 @@ type ParameterMarker
     | Question      -- ? (0x3F)
 
 
-emptyParser : a -> (Action -> a -> a) -> Parser a
-emptyParser model update =
-    Parser (Unescaped "") False model update
-
-
 {-| Convert an arbitrary String of text into a sequence of actions.
 
 If the input string ends with a partial ANSI escape sequence, it will be
@@ -138,13 +131,18 @@ parse =
 -}
 parseInto : a -> (Action -> a -> a) -> String -> a
 parseInto model update ansi =
-    completeParsing <|
-        List.foldl parseChar (emptyParser model update) <|
+    finalizeParsing <|
+        List.foldl parseChar (initialParser model update) <|
             String.toList ansi
 
 
-completeParsing : Parser a -> a
-completeParsing parser =
+initialParser : a -> (Action -> a -> a) -> Parser a
+initialParser model update =
+    Parser (Unescaped "") False model update
+
+
+finalizeParsing : Parser a -> a
+finalizeParsing parser =
     case parser of
         Parser Escaped _ model update ->
             update (Remainder "\u{001B}") model
@@ -158,7 +156,7 @@ completeParsing parser =
                     Just Question -> "?"
                     Nothing -> ""
             in
-            update (Remainder <| "\u{001B}[" ++ markerStr ++ encodeCodes (parsedCodes ++ [ currentCode ])) model
+            update (Remainder <| "\u{001B}[" ++ markerStr ++ formatCodes (parsedCodes ++ [ currentCode ])) model
 
         Parser (OSC chars) _ model update ->
             update (Remainder <| "\u{001B}]" ++ chars) model
@@ -176,224 +174,9 @@ completeParsing parser =
             update (Print str) model
 
 
-encodeCodes : List (Maybe Int) -> String
-encodeCodes codes =
-    String.join ";" (List.map encodeCode codes)
-
-
-encodeCode : Maybe Int -> String
-encodeCode code =
-    case code of
-        Nothing ->
-            ""
-
-        Just num ->
-            String.fromInt num
-
-
-{-| Converts a color code to an 8-bit color per
-<https://en.wikipedia.org/wiki/ANSI_escape_code#8-bit>
--}
-colorCode : Int -> Maybe Color
-colorCode code =
-    case code of
-        0 -> Just Black
-        1 -> Just Red
-        2 -> Just Green
-        3 -> Just Yellow
-        4 -> Just Blue
-        5 -> Just Magenta
-        6 -> Just Cyan
-        7 -> Just White
-        8 -> Just BrightBlack
-        9 -> Just BrightRed
-        10 -> Just BrightGreen
-        11 -> Just BrightYellow
-        12 -> Just BrightBlue
-        13 -> Just BrightMagenta
-        14 -> Just BrightCyan
-        15 -> Just BrightWhite
-
-        _ ->
-            if code < 232 then
-                -- 6x6x6 RGB cube (codes 16-231, 216 colors)
-                let
-                    c = code - 16
-                    b = modBy 6 c
-                    g = modBy 6 (c // 6)
-                    r = c // 36  -- Division by 36 (6²) extracts red component
-                in
-                Just <| Custom (scale6 r) (scale6 g) (scale6 b)
-
-            else if code < 256 then
-                -- Grayscale ramp (codes 232-255, 24 shades)
-                let
-                    gray = (code - 232) * 10 + 8
-                in
-                Just <| Custom gray gray gray
-
-            else
-                Nothing
-
-
-{-| Scales [0,5] -> [0,255] (non-uniformly)
-0 -> 0, 1 -> 95, 2 -> 135, 3 -> 175, 4 -> 215, 5 -> 255
--}
-scale6 : Int -> Int
-scale6 n =
-    if n == 0 then 0 else 55 + n * 40
-
-
-{-| Capture SGR arguments in pattern match
--}
-captureArguments : List Int -> List Action
-captureArguments list =
-    case list of
-        -- Incomplete 256-color sequences - skip them entirely
-        38 :: 5 :: [] ->
-            []
-
-        48 :: 5 :: [] ->
-            []
-
-        -- Incomplete 24-bit color sequences - skip them entirely
-        38 :: 2 :: _ :: [] ->
-            []
-
-        38 :: 2 :: _ :: _ :: [] ->
-            []
-
-        48 :: 2 :: _ :: [] ->
-            []
-
-        48 :: 2 :: _ :: _ :: [] ->
-            []
-
-        -- Valid 256-color sequences - only emit action if colorCode succeeds
-        38 :: 5 :: n :: xs ->
-            case colorCode n of
-                Just color ->
-                    SetForeground (Just color) :: captureArguments xs
-                Nothing ->
-                    captureArguments xs
-
-        48 :: 5 :: n :: xs ->
-            case colorCode n of
-                Just color ->
-                    SetBackground (Just color) :: captureArguments xs
-                Nothing ->
-                    captureArguments xs
-
-        -- Valid 24-bit color sequences
-        38 :: 2 :: r :: g :: b :: xs ->
-            let
-                c =
-                    clamp 0 255
-            in
-            SetForeground (Just <| Custom (c r) (c g) (c b)) :: captureArguments xs
-
-        48 :: 2 :: r :: g :: b :: xs ->
-            let
-                c =
-                    clamp 0 255
-            in
-            SetBackground (Just <| Custom (c r) (c g) (c b)) :: captureArguments xs
-
-        n :: xs ->
-            codeActions n ++ captureArguments xs
-
-        [] ->
-            []
-
-
--- Check if a character is an unreserved character according to RFC 3986
-isUnreservedChar : Char -> Bool
-isUnreservedChar c =
-    Char.isAlphaNum c || c == '-' || c == '.' || c == '_' || c == '~'
-
-
--- Check if a character is a reserved character according to RFC 3986
-isReservedChar : Char -> Bool
-isReservedChar c =
-    String.contains (String.fromChar c) ":/?#[]@!$&'()*+,;="
-
-
--- Validate that a parameter follows HTTP spec but doesn't contain the
--- hyperlink protocol delimiters
-validateSingleParam : String -> Bool
-validateSingleParam param =
-    -- For hyperlink parameters, we need to exclude : and ; as they're delimiters
-    -- in the hyperlink protocol, even though they're valid in HTTP URLs
-    String.all (\c ->
-        (isUnreservedChar c || (isReservedChar c && c /= ':' && c /= ';')) &&
-        Char.toCode c >= 32 && Char.toCode c <= 126
-    ) param
-
-
-processHyperlinkParts : String -> String -> List Action
-processHyperlinkParts params uri =
-    let
-        parsedParams = parseParams params
-        validParams = List.all validateSingleParam parsedParams
-
-        processedUri =
-            if String.any (\c -> Char.toCode c > 127) uri then
-                String.toList uri
-                    |> List.map (\c ->
-                        if Char.toCode c > 127 then
-                            Url.percentEncode (String.fromChar c)
-                        else
-                            String.fromChar c
-                    )
-                    |> String.concat
-            else
-                uri
-    in
-    if not validParams then
-        []
-    else
-        [HyperlinkStart parsedParams processedUri]
-
-
-parseOSCWithState : Bool -> String -> (List Action, Bool)
-parseOSCWithState hasActiveLink str =
-    -- Specifically check for the hyperlink end sequence "8;;"
-    if str == "8;;" then
-        if hasActiveLink then
-            ([HyperlinkEnd], False)
-        else
-            ([], False)
-    -- Check for hyperlink start sequence "8;params;uri"
-    else if String.startsWith "8;" str then
-        -- Split only on first 2 semicolons to preserve semicolons in URI
-        case String.split ";" str of
-            "8" :: params :: rest ->
-                -- URI might contain semicolons, so rejoin remaining parts
-                let
-                    uri = String.join ";" rest
-                in
-                if String.isEmpty uri then
-                    -- Invalid format: no URI provided
-                    ([], hasActiveLink)
-                else
-                    let
-                        actions = processHyperlinkParts params uri
-                    in
-                    (actions, not (List.isEmpty actions))
-            _ ->
-                ([], hasActiveLink)
-    else
-        ([], hasActiveLink)
-
-
-{-| Parse hyperlink parameters
--}
-parseParams : String -> List String
-parseParams params =
-    if String.isEmpty params then
-        []
-    else
-        String.split ":" params
+completeEscapeSequence : Parser a -> Bool -> List Action -> Parser a
+completeEscapeSequence (Parser _ hasLink model update) newHasLink actions =
+    Parser (Unescaped "") newHasLink (List.foldl update model actions) update
 
 
 parseChar : Char -> Parser a -> Parser a
@@ -480,9 +263,9 @@ parseChar c parser =
                 '\u{0007}' ->
                     -- BEL character marks the end of an OSC sequence
                     let
-                        (actions, newHasLink) = parseOSCWithState hasLink chars
+                        (actions, newHasLink) = parseOSCSequence hasLink chars
                     in
-                    finishEscapeSequence parser newHasLink actions
+                    completeEscapeSequence parser newHasLink actions
 
                 '\u{001B}' ->
                     -- Possibly the start of an ESC+backslash terminator
@@ -497,9 +280,9 @@ parseChar c parser =
                 '\\' ->
                     -- ESC+backslash terminator found
                     let
-                        (actions, newHasLink) = parseOSCWithState hasLink chars
+                        (actions, newHasLink) = parseOSCSequence hasLink chars
                     in
-                    finishEscapeSequence parser newHasLink actions
+                    completeEscapeSequence parser newHasLink actions
 
                 _ ->
                     -- Not a terminator, continue as a normal OSC sequence with ESC included
@@ -525,22 +308,23 @@ parseChar c parser =
 
                     _ ->
                         -- Not a parameter marker, process as normal CSI character
-                        handleCSICommand c marker parsedCodes currentCode hasLink model update parser
+                        parseCSICommand c marker parsedCodes currentCode hasLink model update parser
             else
                 -- We already have a marker or codes, process normally
-                handleCSICommand c marker parsedCodes currentCode hasLink model update parser
+                parseCSICommand c marker parsedCodes currentCode hasLink model update parser
 
 
 -- Helper function to handle CSI command characters
-handleCSICommand : Char -> Maybe ParameterMarker -> List (Maybe Int) -> Maybe Int -> Bool -> a -> (Action -> a -> a) -> Parser a -> Parser a
-handleCSICommand c marker parsedCodes currentCode hasLink model update parser =
+
+parseCSICommand : Char -> Maybe ParameterMarker -> List (Maybe Int) -> Maybe Int -> Bool -> a -> (Action -> a -> a) -> Parser a -> Parser a
+parseCSICommand c marker parsedCodes currentCode hasLink model update parser =
     -- If we have a parameter marker (<>=?), this is a private/experimental sequence
     -- We consume it but don't execute any actions (per ANSI/DEC VT100 standard)
     case marker of
         Just _ ->
             -- Any letter terminates the sequence, but we produce no actions
             if Char.isAlpha c then
-                finishEscapeSequence parser hasLink []
+                completeEscapeSequence parser hasLink []
             else if c == ';' then
                 Parser (CSI { marker = marker, parsedCodes = parsedCodes ++ [ currentCode ], currentCode = Nothing }) hasLink model update
             else if Char.isDigit c then
@@ -553,65 +337,65 @@ handleCSICommand c marker parsedCodes currentCode hasLink model update parser =
                 Parser (CSI { marker = marker, parsedCodes = parsedCodes, currentCode = Just newCode }) hasLink model update
             else
                 -- Unknown character in private sequence, discard
-                finishEscapeSequence parser hasLink []
+                completeEscapeSequence parser hasLink []
 
         Nothing ->
             -- No marker means standard CSI sequence, process normally
             case c of
                 'm' ->
-                    finishEscapeSequence parser hasLink <|
-                        captureArguments <|
+                    completeEscapeSequence parser hasLink <|
+                        processSGRCodes <|
                             List.map (Maybe.withDefault 0) (parsedCodes ++ [ currentCode ])
 
                 'A' ->
-                    finishEscapeSequence parser hasLink
+                    completeEscapeSequence parser hasLink
                         [ CursorUp (max 1 (Maybe.withDefault 1 currentCode)) ]
 
                 'B' ->
-                    finishEscapeSequence parser hasLink
+                    completeEscapeSequence parser hasLink
                         [ CursorDown (max 1 (Maybe.withDefault 1 currentCode)) ]
 
                 'C' ->
-                    finishEscapeSequence parser hasLink
+                    completeEscapeSequence parser hasLink
                         [ CursorForward (max 1 (Maybe.withDefault 1 currentCode)) ]
 
                 'D' ->
-                    finishEscapeSequence parser hasLink
+                    completeEscapeSequence parser hasLink
                         [ CursorBackward (max 1 (Maybe.withDefault 1 currentCode)) ]
 
                 'E' ->
-                    finishEscapeSequence parser hasLink
+                    completeEscapeSequence parser hasLink
                         [ CursorDown (max 1 (Maybe.withDefault 1 currentCode)), CursorColumn 0 ]
 
                 'F' ->
-                    finishEscapeSequence parser hasLink
+                    completeEscapeSequence parser hasLink
                         [ CursorUp (max 1 (Maybe.withDefault 1 currentCode)), CursorColumn 0 ]
 
                 'G' ->
-                    finishEscapeSequence parser hasLink
+                    completeEscapeSequence parser hasLink
                         [ CursorColumn (max 0 (Maybe.withDefault 1 currentCode - 1)) ]
 
                 'H' ->
-                    finishEscapeSequence parser hasLink <|
+                    completeEscapeSequence parser hasLink <|
                         cursorPosition (parsedCodes ++ [ currentCode ])
 
                 'J' ->
-                    finishEscapeSequence parser hasLink
+                    completeEscapeSequence parser hasLink
                         [ EraseDisplay (eraseMode (Maybe.withDefault 0 currentCode)) ]
 
                 'K' ->
-                    finishEscapeSequence parser hasLink
+                    completeEscapeSequence parser hasLink
                         [ EraseLine (eraseMode (Maybe.withDefault 0 currentCode)) ]
 
                 'f' ->
-                    finishEscapeSequence parser hasLink <|
+                    completeEscapeSequence parser hasLink <|
                         cursorPosition (parsedCodes ++ [ currentCode ])
 
                 's' ->
-                    finishEscapeSequence parser hasLink [ SaveCursorPosition ]
+                    completeEscapeSequence parser hasLink [ SaveCursorPosition ]
 
                 'u' ->
-                    finishEscapeSequence parser hasLink [ RestoreCursorPosition ]
+                    completeEscapeSequence parser hasLink [ RestoreCursorPosition ]
 
                 ';' ->
                     Parser (CSI { marker = marker, parsedCodes = parsedCodes ++ [ currentCode ], currentCode = Nothing }) hasLink model update
@@ -641,54 +425,74 @@ handleCSICommand c marker parsedCodes currentCode hasLink model update parser =
                         -- Any non-digit, non-semicolon character (letter or otherwise) terminates CSI
                         -- Unknown/unrecognized commands are discarded per DEC/VT100 behavior
                         -- Private sequences (with markers) that we don't recognize are also discarded
-                        finishEscapeSequence parser hasLink []
+                        completeEscapeSequence parser hasLink []
 
 
-finishEscapeSequence : Parser a -> Bool -> List Action -> Parser a
-finishEscapeSequence (Parser _ hasLink model update) newHasLink actions =
-    Parser (Unescaped "") newHasLink (List.foldl update model actions) update
+-- SGR (Select Graphic Rendition) Processing
 
 
-cursorPosition : List (Maybe Int) -> List Action
-cursorPosition codes =
-    case codes of
-        [ Nothing, Nothing ] ->
-            [ CursorPosition 1 1 ]
+processSGRCodes : List Int -> List Action
+processSGRCodes list =
+    case list of
+        -- Incomplete 256-color sequences - skip them entirely
+        38 :: 5 :: [] ->
+            []
 
-        [ Nothing ] ->
-            [ CursorPosition 1 1 ]
+        48 :: 5 :: [] ->
+            []
 
-        [ Just row ] ->
-            [ CursorPosition (max 1 row) 1 ]
+        -- Incomplete 24-bit color sequences - skip them entirely
+        38 :: 2 :: _ :: [] ->
+            []
 
-        [ Just row, Nothing ] ->
-            [ CursorPosition (max 1 row) 1 ]
+        38 :: 2 :: _ :: _ :: [] ->
+            []
 
-        [ Nothing, Just col ] ->
-            [ CursorPosition 1 (max 1 col) ]
+        48 :: 2 :: _ :: [] ->
+            []
 
-        [ Just row, Just col ] ->
-            [ CursorPosition (max 1 row) (max 1 col) ]
+        48 :: 2 :: _ :: _ :: [] ->
+            []
 
-        _ ->
+        -- Valid 256-color sequences - only emit action if colorCode succeeds
+        38 :: 5 :: n :: xs ->
+            case colorCode n of
+                Just color ->
+                    SetForeground (Just color) :: processSGRCodes xs
+                Nothing ->
+                    processSGRCodes xs
+
+        48 :: 5 :: n :: xs ->
+            case colorCode n of
+                Just color ->
+                    SetBackground (Just color) :: processSGRCodes xs
+                Nothing ->
+                    processSGRCodes xs
+
+        -- Valid 24-bit color sequences
+        38 :: 2 :: r :: g :: b :: xs ->
+            let
+                c =
+                    clamp 0 255
+            in
+            SetForeground (Just <| Custom (c r) (c g) (c b)) :: processSGRCodes xs
+
+        48 :: 2 :: r :: g :: b :: xs ->
+            let
+                c =
+                    clamp 0 255
+            in
+            SetBackground (Just <| Custom (c r) (c g) (c b)) :: processSGRCodes xs
+
+        n :: xs ->
+            sgrCodeToActions n ++ processSGRCodes xs
+
+        [] ->
             []
 
 
-eraseMode : Int -> EraseMode
-eraseMode code =
-    case code of
-        0 ->
-            EraseToEnd
-
-        1 ->
-            EraseToBeginning
-
-        _ ->
-            EraseAll
-
-
-codeActions : Int -> List Action
-codeActions code =
+sgrCodeToActions : Int -> List Action
+sgrCodeToActions code =
     case code of
         0 ->
             reset
@@ -868,3 +672,201 @@ reset =
     , SetFraktur False
     , SetFramed False
     ]
+
+
+-- Color Conversion
+
+
+{-| Converts a color code to an 8-bit color per
+<https://en.wikipedia.org/wiki/ANSI_escape_code#8-bit>
+-}
+colorCode : Int -> Maybe Color
+colorCode code =
+    case code of
+        0 -> Just Black
+        1 -> Just Red
+        2 -> Just Green
+        3 -> Just Yellow
+        4 -> Just Blue
+        5 -> Just Magenta
+        6 -> Just Cyan
+        7 -> Just White
+        8 -> Just BrightBlack
+        9 -> Just BrightRed
+        10 -> Just BrightGreen
+        11 -> Just BrightYellow
+        12 -> Just BrightBlue
+        13 -> Just BrightMagenta
+        14 -> Just BrightCyan
+        15 -> Just BrightWhite
+
+        _ ->
+            if code < 232 then
+                -- 6x6x6 RGB cube (codes 16-231, 216 colors)
+                let
+                    c = code - 16
+                    b = modBy 6 c
+                    g = modBy 6 (c // 6)
+                    r = c // 36  -- Division by 36 (6²) extracts red component
+                in
+                Just <| Custom (scaleColorComponent r) (scaleColorComponent g) (scaleColorComponent b)
+
+            else if code < 256 then
+                -- Grayscale ramp (codes 232-255, 24 shades)
+                let
+                    gray = (code - 232) * 10 + 8
+                in
+                Just <| Custom gray gray gray
+
+            else
+                Nothing
+
+
+{-| Scales [0,5] -> [0,255] (non-uniformly)
+0 -> 0, 1 -> 95, 2 -> 135, 3 -> 175, 4 -> 215, 5 -> 255
+-}
+scaleColorComponent : Int -> Int
+scaleColorComponent n =
+    if n == 0 then 0 else 55 + n * 40
+
+
+-- Cursor and Screen Control Helpers
+
+
+cursorPosition : List (Maybe Int) -> List Action
+cursorPosition codes =
+    case codes of
+        [ Nothing, Nothing ] ->
+            [ CursorPosition 1 1 ]
+
+        [ Nothing ] ->
+            [ CursorPosition 1 1 ]
+
+        [ Just row ] ->
+            [ CursorPosition (max 1 row) 1 ]
+
+        [ Just row, Nothing ] ->
+            [ CursorPosition (max 1 row) 1 ]
+
+        [ Nothing, Just col ] ->
+            [ CursorPosition 1 (max 1 col) ]
+
+        [ Just row, Just col ] ->
+            [ CursorPosition (max 1 row) (max 1 col) ]
+
+        _ ->
+            []
+
+
+eraseMode : Int -> EraseMode
+eraseMode code =
+    case code of
+        0 ->
+            EraseToEnd
+
+        1 ->
+            EraseToBeginning
+
+        _ ->
+            EraseAll
+
+
+-- Hyperlink Processing (OSC 8)
+
+
+parseOSCSequence : Bool -> String -> (List Action, Bool)
+parseOSCSequence hasActiveLink str =
+    -- Specifically check for the hyperlink end sequence "8;;"
+    if str == "8;;" then
+        if hasActiveLink then
+            ([HyperlinkEnd], False)
+        else
+            ([], False)
+    -- Check for hyperlink start sequence "8;params;uri"
+    else if String.startsWith "8;" str then
+        -- Split only on first 2 semicolons to preserve semicolons in URI
+        case String.split ";" str of
+            "8" :: params :: rest ->
+                -- URI might contain semicolons, so rejoin remaining parts
+                let
+                    uri = String.join ";" rest
+                in
+                if String.isEmpty uri then
+                    -- Invalid format: no URI provided
+                    ([], hasActiveLink)
+                else
+                    let
+                        actions = buildHyperlinkActions params uri
+                    in
+                    (actions, not (List.isEmpty actions))
+            _ ->
+                ([], hasActiveLink)
+    else
+        ([], hasActiveLink)
+
+
+buildHyperlinkActions : String -> String -> List Action
+buildHyperlinkActions params uri =
+    let
+        parsedParams = parseParams params
+        validParams = List.all validateSingleParam parsedParams
+
+        processedUri =
+            if String.any (\c -> Char.toCode c > 127) uri then
+                String.toList uri
+                    |> List.map (\c ->
+                        if Char.toCode c > 127 then
+                            Url.percentEncode (String.fromChar c)
+                        else
+                            String.fromChar c
+                    )
+                    |> String.concat
+            else
+                uri
+    in
+    if not validParams then
+        []
+    else
+        [HyperlinkStart parsedParams processedUri]
+
+
+parseParams : String -> List String
+parseParams params =
+    if String.isEmpty params then
+        []
+    else
+        String.split ":" params
+
+
+isUnreservedChar : Char -> Bool
+isUnreservedChar c =
+    Char.isAlphaNum c || c == '-' || c == '.' || c == '_' || c == '~'
+
+
+isReservedChar : Char -> Bool
+isReservedChar c =
+    String.contains (String.fromChar c) ":/?#[]@!$&'()*+,;="
+
+
+-- Validate that a parameter follows HTTP spec but doesn't contain the
+-- hyperlink protocol delimiters
+validateSingleParam : String -> Bool
+validateSingleParam param =
+    -- For hyperlink parameters, we need to exclude : and ; as they're delimiters
+    -- in the hyperlink protocol, even though they're valid in HTTP URLs
+    String.all (\c ->
+        (isUnreservedChar c || (isReservedChar c && c /= ':' && c /= ';')) &&
+        Char.toCode c >= 32 && Char.toCode c <= 126
+    ) param
+
+
+-- Encoding Helper for Remainder
+
+
+formatCodes : List (Maybe Int) -> String
+formatCodes codes =
+    String.join ";" (List.map (\code ->
+        case code of
+            Nothing -> ""
+            Just num -> String.fromInt num
+    ) codes)
