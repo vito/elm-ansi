@@ -184,7 +184,7 @@ parseChar c parser =
     case parser of
         Parser (Unescaped str) hasLink model update ->
             case c of
-                '\u{000D}' ->
+                '\r' ->
                     let
                         updatedModel = if str == "" then model else update (Print str) model
                     in
@@ -196,7 +196,7 @@ parseChar c parser =
                     in
                     Parser (Unescaped "") hasLink (update Linebreak updatedModel) update
 
-                '\u{001B}' ->
+                '\u{001B}' -> -- ESC
                     let
                         updatedModel = if str == "" then model else update (Print str) model
                     in
@@ -260,14 +260,13 @@ parseChar c parser =
 
         Parser (OSC chars) hasLink model update ->
             case c of
-                '\u{0007}' ->
-                    -- BEL character marks the end of an OSC sequence
+                '\u{0007}' -> -- BEL marks the end of an OSC sequence
                     let
                         (actions, newHasLink) = parseOSCSequence hasLink chars
                     in
                     completeEscapeSequence parser newHasLink actions
 
-                '\u{001B}' ->
+                '\u{001B}' -> -- ESC
                     -- Possibly the start of an ESC+backslash terminator
                     Parser (OSCAwaitingTerminator chars) hasLink model update
 
