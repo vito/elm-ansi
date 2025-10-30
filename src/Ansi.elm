@@ -223,12 +223,42 @@ scale6 n =
 captureArguments : List Int -> List Action
 captureArguments list =
     case list of
+        -- Incomplete 256-color sequences - skip them entirely
+        38 :: 5 :: [] ->
+            []
+
+        48 :: 5 :: [] ->
+            []
+
+        -- Incomplete 24-bit color sequences - skip them entirely
+        38 :: 2 :: _ :: [] ->
+            []
+
+        38 :: 2 :: _ :: _ :: [] ->
+            []
+
+        48 :: 2 :: _ :: [] ->
+            []
+
+        48 :: 2 :: _ :: _ :: [] ->
+            []
+
+        -- Valid 256-color sequences - only emit action if colorCode succeeds
         38 :: 5 :: n :: xs ->
-            SetForeground (colorCode n) :: captureArguments xs
+            case colorCode n of
+                Just color ->
+                    SetForeground (Just color) :: captureArguments xs
+                Nothing ->
+                    captureArguments xs
 
         48 :: 5 :: n :: xs ->
-            SetBackground (colorCode n) :: captureArguments xs
+            case colorCode n of
+                Just color ->
+                    SetBackground (Just color) :: captureArguments xs
+                Nothing ->
+                    captureArguments xs
 
+        -- Valid 24-bit color sequences
         38 :: 2 :: r :: g :: b :: xs ->
             let
                 c =
@@ -410,27 +440,27 @@ parseChar c parser =
 
                 'A' ->
                     completeBracketed parser hasLink
-                        [ CursorUp (Maybe.withDefault 1 currentCode) ]
+                        [ CursorUp (max 1 (Maybe.withDefault 1 currentCode)) ]
 
                 'B' ->
                     completeBracketed parser hasLink
-                        [ CursorDown (Maybe.withDefault 1 currentCode) ]
+                        [ CursorDown (max 1 (Maybe.withDefault 1 currentCode)) ]
 
                 'C' ->
                     completeBracketed parser hasLink
-                        [ CursorForward (Maybe.withDefault 1 currentCode) ]
+                        [ CursorForward (max 1 (Maybe.withDefault 1 currentCode)) ]
 
                 'D' ->
                     completeBracketed parser hasLink
-                        [ CursorBackward (Maybe.withDefault 1 currentCode) ]
+                        [ CursorBackward (max 1 (Maybe.withDefault 1 currentCode)) ]
 
                 'E' ->
                     completeBracketed parser hasLink
-                        [ CursorDown (Maybe.withDefault 1 currentCode), CursorColumn 0 ]
+                        [ CursorDown (max 1 (Maybe.withDefault 1 currentCode)), CursorColumn 0 ]
 
                 'F' ->
                     completeBracketed parser hasLink
-                        [ CursorUp (Maybe.withDefault 1 currentCode), CursorColumn 0 ]
+                        [ CursorUp (max 1 (Maybe.withDefault 1 currentCode)), CursorColumn 0 ]
 
                 'G' ->
                     completeBracketed parser hasLink
@@ -461,6 +491,12 @@ parseChar c parser =
                 ';' ->
                     Parser (CSI (codes ++ [ currentCode ]) Nothing) hasLink model update
 
+                '?' ->
+                    -- Private marker (e.g., ESC[?1003l for mouse tracking)
+                    -- Ignore it and continue parsing - we'll discard private sequences
+                    -- since we don't implement them
+                    parser
+
                 _ ->
                     if Char.isDigit c then
                         let
@@ -471,6 +507,8 @@ parseChar c parser =
                         in
                         Parser (CSI codes (Just newCode)) hasLink model update
                     else
+                        -- Any non-digit character (letter or otherwise) terminates CSI
+                        -- Unknown/unrecognized commands are discarded per DEC/VT100 behavior
                         completeBracketed parser hasLink []
 
 
@@ -502,14 +540,17 @@ cursorPosition codes =
         [ Nothing ] ->
             [ CursorPosition 1 1 ]
 
+        [ Just row ] ->
+            [ CursorPosition (max 1 row) 1 ]
+
         [ Just row, Nothing ] ->
-            [ CursorPosition row 1 ]
+            [ CursorPosition (max 1 row) 1 ]
 
         [ Nothing, Just col ] ->
-            [ CursorPosition 1 col ]
+            [ CursorPosition 1 (max 1 col) ]
 
         [ Just row, Just col ] ->
-            [ CursorPosition row col ]
+            [ CursorPosition (max 1 row) (max 1 col) ]
 
         _ ->
             []

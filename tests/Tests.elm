@@ -120,6 +120,255 @@ parsing =
                     , Ansi.Print "not italic/fraktur"
                     ]
                     (Ansi.parse "some text\u{001B}[21mnot bold\u{001B}[22mnot intense\u{001B}[23mnot italic/fraktur")
+        , test "fraktur style" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.Print "normal"
+                    , Ansi.SetFraktur True
+                    , Ansi.Print "fraktur"
+                    , Ansi.SetItalic False
+                    , Ansi.SetFraktur False
+                    , Ansi.Print "not fraktur"
+                    ]
+                    (Ansi.parse "normal\u{001B}[20mfraktur\u{001B}[23mnot fraktur")
+        , test "framed style" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.Print "normal"
+                    , Ansi.SetFramed True
+                    , Ansi.Print "framed"
+                    , Ansi.SetFramed False
+                    , Ansi.Print "not framed"
+                    ]
+                    (Ansi.parse "normal\u{001B}[51mframed\u{001B}[54mnot framed")
+        , test "fast blink (code 6) - not implemented, no action" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.Print "normal"
+                    , Ansi.Print "fast blink"
+                    ]
+                    (Ansi.parse "normal\u{001B}[6mfast blink")
+        , test "all standard foreground colors" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.SetForeground (Just Ansi.Black)
+                    , Ansi.SetForeground (Just Ansi.Red)
+                    , Ansi.SetForeground (Just Ansi.Green)
+                    , Ansi.SetForeground (Just Ansi.Yellow)
+                    , Ansi.SetForeground (Just Ansi.Blue)
+                    , Ansi.SetForeground (Just Ansi.Magenta)
+                    , Ansi.SetForeground (Just Ansi.Cyan)
+                    , Ansi.SetForeground (Just Ansi.White)
+                    ]
+                    (Ansi.parse "\u{001B}[30m\u{001B}[31m\u{001B}[32m\u{001B}[33m\u{001B}[34m\u{001B}[35m\u{001B}[36m\u{001B}[37m")
+        , test "all standard background colors" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.SetBackground (Just Ansi.Black)
+                    , Ansi.SetBackground (Just Ansi.Red)
+                    , Ansi.SetBackground (Just Ansi.Green)
+                    , Ansi.SetBackground (Just Ansi.Yellow)
+                    , Ansi.SetBackground (Just Ansi.Blue)
+                    , Ansi.SetBackground (Just Ansi.Magenta)
+                    , Ansi.SetBackground (Just Ansi.Cyan)
+                    , Ansi.SetBackground (Just Ansi.White)
+                    ]
+                    (Ansi.parse "\u{001B}[40m\u{001B}[41m\u{001B}[42m\u{001B}[43m\u{001B}[44m\u{001B}[45m\u{001B}[46m\u{001B}[47m")
+        , test "all bright foreground colors" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.SetForeground (Just Ansi.BrightBlack)
+                    , Ansi.SetForeground (Just Ansi.BrightRed)
+                    , Ansi.SetForeground (Just Ansi.BrightGreen)
+                    , Ansi.SetForeground (Just Ansi.BrightYellow)
+                    , Ansi.SetForeground (Just Ansi.BrightBlue)
+                    , Ansi.SetForeground (Just Ansi.BrightMagenta)
+                    , Ansi.SetForeground (Just Ansi.BrightCyan)
+                    , Ansi.SetForeground (Just Ansi.BrightWhite)
+                    ]
+                    (Ansi.parse "\u{001B}[90m\u{001B}[91m\u{001B}[92m\u{001B}[93m\u{001B}[94m\u{001B}[95m\u{001B}[96m\u{001B}[97m")
+        , test "all bright background colors" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.SetBackground (Just Ansi.BrightBlack)
+                    , Ansi.SetBackground (Just Ansi.BrightRed)
+                    , Ansi.SetBackground (Just Ansi.BrightGreen)
+                    , Ansi.SetBackground (Just Ansi.BrightYellow)
+                    , Ansi.SetBackground (Just Ansi.BrightBlue)
+                    , Ansi.SetBackground (Just Ansi.BrightMagenta)
+                    , Ansi.SetBackground (Just Ansi.BrightCyan)
+                    , Ansi.SetBackground (Just Ansi.BrightWhite)
+                    ]
+                    (Ansi.parse "\u{001B}[100m\u{001B}[101m\u{001B}[102m\u{001B}[103m\u{001B}[104m\u{001B}[105m\u{001B}[106m\u{001B}[107m")
+        , test "color reset codes" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.SetForeground (Just Ansi.Red)
+                    , Ansi.Print "red"
+                    , Ansi.SetForeground Nothing
+                    , Ansi.Print "default fg"
+                    , Ansi.SetBackground (Just Ansi.Blue)
+                    , Ansi.Print "blue bg"
+                    , Ansi.SetBackground Nothing
+                    , Ansi.Print "default bg"
+                    ]
+                    (Ansi.parse "\u{001B}[31mred\u{001B}[39mdefault fg\u{001B}[44mblue bg\u{001B}[49mdefault bg")
+        , test "individual style reset codes" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.SetUnderline True
+                    , Ansi.Print "underlined"
+                    , Ansi.SetUnderline False
+                    , Ansi.Print "not underlined"
+                    , Ansi.SetBlink True
+                    , Ansi.Print "blinking"
+                    , Ansi.SetBlink False
+                    , Ansi.Print "not blinking"
+                    , Ansi.SetInverted True
+                    , Ansi.Print "inverted"
+                    , Ansi.SetInverted False
+                    , Ansi.Print "not inverted"
+                    , Ansi.SetStrikethrough True
+                    , Ansi.Print "struck"
+                    , Ansi.SetStrikethrough False
+                    , Ansi.Print "not struck"
+                    ]
+                    (Ansi.parse "\u{001B}[4munderlined\u{001B}[24mnot underlined\u{001B}[5mblinking\u{001B}[25mnot blinking\u{001B}[7minverted\u{001B}[27mnot inverted\u{001B}[9mstruck\u{001B}[29mnot struck")
+        , test "cursor movement with default parameters" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.CursorUp 1
+                    , Ansi.CursorDown 1
+                    , Ansi.CursorForward 1
+                    , Ansi.CursorBackward 1
+                    ]
+                    (Ansi.parse "\u{001B}[A\u{001B}[B\u{001B}[C\u{001B}[D")
+        , test "cursor movement with explicit zero defaults to 1" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.CursorUp 1
+                    , Ansi.CursorDown 1
+                    , Ansi.CursorForward 1
+                    , Ansi.CursorBackward 1
+                    ]
+                    (Ansi.parse "\u{001B}[0A\u{001B}[0B\u{001B}[0C\u{001B}[0D")
+        , test "ESC[C is equivalent to ESC[1C and ESC[0C" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.CursorForward 1
+                    , Ansi.CursorForward 1
+                    , Ansi.CursorForward 1
+                    ]
+                    (Ansi.parse "\u{001B}[C\u{001B}[1C\u{001B}[0C")
+        , test "cursor position variations" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.CursorPosition 1 1
+                    , Ansi.CursorPosition 10 1
+                    , Ansi.CursorPosition 1 20
+                    , Ansi.CursorPosition 15 25
+                    ]
+                    (Ansi.parse "\u{001B}[H\u{001B}[10H\u{001B}[;20H\u{001B}[15;25H")
+        , test "cursor position with single row parameter" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.CursorPosition 10 1
+                    , Ansi.CursorPosition 5 1
+                    , Ansi.CursorPosition 1 1
+                    ]
+                    (Ansi.parse "\u{001B}[10H\u{001B}[5H\u{001B}[1H")
+        , test "cursor position with only column parameter" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.CursorPosition 1 10
+                    , Ansi.CursorPosition 1 5
+                    , Ansi.CursorPosition 1 1
+                    ]
+                    (Ansi.parse "\u{001B}[;10H\u{001B}[;5H\u{001B}[;1H")
+        , test "cursor position with 0 values" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.CursorPosition 1 1
+                    , Ansi.CursorPosition 10 1
+                    , Ansi.CursorPosition 1 10
+                    ]
+                    (Ansi.parse "\u{001B}[0;0H\u{001B}[10;0H\u{001B}[0;10H")
+        , test "cursor position with f command" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.CursorPosition 1 1
+                    , Ansi.CursorPosition 5 10
+                    ]
+                    (Ansi.parse "\u{001B}[f\u{001B}[5;10f")
+        , test "cursor column movement" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.CursorColumn 0
+                    , Ansi.CursorColumn 9
+                    , Ansi.CursorColumn 49
+                    ]
+                    (Ansi.parse "\u{001B}[G\u{001B}[10G\u{001B}[50G")
+        , test "cursor down with column reset (E)" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.CursorDown 1
+                    , Ansi.CursorColumn 0
+                    , Ansi.CursorDown 3
+                    , Ansi.CursorColumn 0
+                    ]
+                    (Ansi.parse "\u{001B}[E\u{001B}[3E")
+        , test "cursor up with column reset (F)" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.CursorUp 1
+                    , Ansi.CursorColumn 0
+                    , Ansi.CursorUp 2
+                    , Ansi.CursorColumn 0
+                    ]
+                    (Ansi.parse "\u{001B}[F\u{001B}[2F")
+        , test "erase display modes" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.EraseDisplay Ansi.EraseToEnd
+                    , Ansi.EraseDisplay Ansi.EraseToBeginning
+                    , Ansi.EraseDisplay Ansi.EraseAll
+                    , Ansi.EraseDisplay Ansi.EraseAll
+                    ]
+                    (Ansi.parse "\u{001B}[J\u{001B}[1J\u{001B}[2J\u{001B}[3J")
+        , test "erase line modes" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.EraseLine Ansi.EraseToEnd
+                    , Ansi.EraseLine Ansi.EraseToBeginning
+                    , Ansi.EraseLine Ansi.EraseAll
+                    , Ansi.EraseLine Ansi.EraseAll
+                    ]
+                    (Ansi.parse "\u{001B}[K\u{001B}[1K\u{001B}[2K\u{001B}[3K")
+        , test "combined style codes" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.SetBold True
+                    , Ansi.SetItalic True
+                    , Ansi.SetForeground (Just Ansi.Red)
+                    , Ansi.Print "styled"
+                    ]
+                    (Ansi.parse "\u{001B}[1;3;31mstyled")
+        , test "all styles combined in single sequence" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.SetBold True
+                    , Ansi.SetFaint True
+                    , Ansi.SetItalic True
+                    , Ansi.SetUnderline True
+                    , Ansi.SetBlink True
+                    , Ansi.SetInverted True
+                    , Ansi.SetStrikethrough True
+                    , Ansi.SetFraktur True
+                    , Ansi.SetFramed True
+                    , Ansi.SetForeground (Just Ansi.Cyan)
+                    , Ansi.SetBackground (Just Ansi.Magenta)
+                    ]
+                    (Ansi.parse "\u{001B}[1;2;3;4;5;7;9;20;51;36;45m")
         , test "carriage returns and linebreaks" <|
             \() ->
                 Expect.equal
@@ -201,6 +450,70 @@ parsing =
                       [ Ansi.Print "foo", Ansi.Print "bar" ]
                     ]
                     [ invalid1, invalid2, unknown ]
+        , test "malformed 256-color sequences" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.Print "before"
+                    , Ansi.Print "incomplete"
+                    , Ansi.Print "ext"
+                    ]
+                    (Ansi.parse "before\u{001B}[38;5mincomplete\u{001B}[48;5text")
+        , test "malformed 24-bit color sequences" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.Print "before"
+                    , Ansi.Print "missing g and b"
+                    , Ansi.Print "missing b"
+                    ]
+                    (Ansi.parse "before\u{001B}[38;2;255mmissing g and b\u{001B}[48;2;100;200mmissing b")
+        , test "Concourse CI log sequence with unknown commands" <|
+            \() ->
+                -- Real-world case: ESC[r ESC[m ESC(B ESC[?1003l ESC[?1006l ESC[?2004l ESC[1;1H ESC[1;24r ESC[1;1H
+                -- Unknown commands (r, ?...l) should be discarded, only recognized commands output
+                Expect.equal
+                    ([ Ansi.SetForeground Nothing
+                    , Ansi.SetBackground Nothing
+                    , Ansi.SetBold False
+                    , Ansi.SetFaint False
+                    , Ansi.SetItalic False
+                    , Ansi.SetUnderline False
+                    , Ansi.SetBlink False
+                    , Ansi.SetInverted False
+                    , Ansi.SetStrikethrough False
+                    , Ansi.SetFraktur False
+                    , Ansi.SetFramed False
+                    , Ansi.Print "(B"
+                    , Ansi.CursorPosition 1 1
+                    , Ansi.CursorPosition 1 1
+                    ] )
+                    (Ansi.parse "\u{001B}[r\u{001B}[m\u{001B}(B\u{001B}[?1003l\u{001B}[?1006l\u{001B}[?2004l\u{001B}[1;1H\u{001B}[1;24r\u{001B}[1;1H")
+        , test "multiple SGR parameters in one sequence" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.SetBold True
+                    , Ansi.SetForeground (Just Ansi.Red)
+                    , Ansi.SetBackground (Just Ansi.Blue)
+                    , Ansi.Print "styled"
+                    , Ansi.SetBold True
+                    , Ansi.SetItalic True
+                    , Ansi.SetUnderline True
+                    , Ansi.Print "multi-style"
+                    ]
+                    (Ansi.parse "\u{001B}[1;31;44mstyled\u{001B}[1;3;4mmulti-style")
+        , test "out-of-range SGR parameters are ignored" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.Print "normal"
+                    , Ansi.Print "unchanged"
+                    ]
+                    (Ansi.parse "normal\u{001B}[999munchanged")
+        , test "out-of-range 256-color values" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.Print "before"
+                    , Ansi.Print "after"
+                    ]
+                    (Ansi.parse "before\u{001B}[38;5;256mafter")
         ]
 
 
