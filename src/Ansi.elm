@@ -94,11 +94,18 @@ type Parser a
     = Parser ParserState Bool a (Action -> a -> a)
 
 
+type alias CSIState =
+    { marker : Maybe ParameterMarker
+    , parsedCodes : List (Maybe Int)
+    , currentCode : Maybe Int
+    }
+
+
 type ParserState
     = Escaped
-    | CSI (Maybe ParameterMarker) (List (Maybe Int)) (Maybe Int)
+    | CSI CSIState
     | OSC String
-    | OSCTerminating String
+    | OSCAwaitingTerminator String
     | CharsetDesignation
     | Unescaped String
 
@@ -142,7 +149,7 @@ completeParsing parser =
         Parser Escaped _ model update ->
             update (Remainder "\u{001B}") model
 
-        Parser (CSI marker codes currentCode) _ model update ->
+        Parser (CSI { marker, parsedCodes, currentCode }) _ model update ->
             let
                 markerStr = case marker of
                     Just LessThan -> "<"
@@ -151,12 +158,12 @@ completeParsing parser =
                     Just Question -> "?"
                     Nothing -> ""
             in
-            update (Remainder <| "\u{001B}[" ++ markerStr ++ encodeCodes (codes ++ [ currentCode ])) model
+            update (Remainder <| "\u{001B}[" ++ markerStr ++ encodeCodes (parsedCodes ++ [ currentCode ])) model
 
         Parser (OSC chars) _ model update ->
             update (Remainder <| "\u{001B}]" ++ chars) model
 
-        Parser (OSCTerminating chars) _ model update ->
+        Parser (OSCAwaitingTerminator chars) _ model update ->
             update (Remainder <| "\u{001B}]" ++ chars ++ "\u{001B}") model
 
         Parser CharsetDesignation _ model update ->
@@ -395,13 +402,22 @@ parseChar c parser =
         Parser (Unescaped str) hasLink model update ->
             case c of
                 '\u{000D}' ->
-                    Parser (Unescaped "") hasLink (update CarriageReturn (completeUnescaped parser)) update
+                    let
+                        updatedModel = if str == "" then model else update (Print str) model
+                    in
+                    Parser (Unescaped "") hasLink (update CarriageReturn updatedModel) update
 
                 '\n' ->
-                    Parser (Unescaped "") hasLink (update Linebreak (completeUnescaped parser)) update
+                    let
+                        updatedModel = if str == "" then model else update (Print str) model
+                    in
+                    Parser (Unescaped "") hasLink (update Linebreak updatedModel) update
 
                 '\u{001B}' ->
-                    Parser Escaped hasLink (completeUnescaped parser) update
+                    let
+                        updatedModel = if str == "" then model else update (Print str) model
+                    in
+                    Parser Escaped hasLink updatedModel update
 
                 _ ->
                     Parser (Unescaped (str ++ String.fromChar c)) hasLink model update
@@ -409,7 +425,7 @@ parseChar c parser =
         Parser Escaped hasLink model update ->
             case c of
                 '[' ->
-                    Parser (CSI Nothing [] Nothing) hasLink model update
+                    Parser (CSI { marker = Nothing, parsedCodes = [], currentCode = Nothing }) hasLink model update
 
                 ']' ->
                     Parser (OSC "") hasLink model update
@@ -466,24 +482,24 @@ parseChar c parser =
                     let
                         (actions, newHasLink) = parseOSCWithState hasLink chars
                     in
-                    completeBracketed parser newHasLink actions
+                    finishEscapeSequence parser newHasLink actions
 
                 '\u{001B}' ->
                     -- Possibly the start of an ESC+backslash terminator
-                    Parser (OSCTerminating chars) hasLink model update
+                    Parser (OSCAwaitingTerminator chars) hasLink model update
 
                 _ ->
                     -- Accumulate characters in the OSC sequence
                     Parser (OSC (chars ++ String.fromChar c)) hasLink model update
 
-        Parser (OSCTerminating chars) hasLink model update ->
+        Parser (OSCAwaitingTerminator chars) hasLink model update ->
             case c of
                 '\\' ->
                     -- ESC+backslash terminator found
                     let
                         (actions, newHasLink) = parseOSCWithState hasLink chars
                     in
-                    completeBracketed parser newHasLink actions
+                    finishEscapeSequence parser newHasLink actions
 
                 _ ->
                     -- Not a terminator, continue as a normal OSC sequence with ESC included
@@ -492,158 +508,144 @@ parseChar c parser =
         Parser CharsetDesignation hasLink model update ->
             Parser (Unescaped "") hasLink model update
 
-        Parser (CSI marker codes currentCode) hasLink model update ->
-            if marker == Nothing && codes == [] && currentCode == Nothing then
+        Parser (CSI { marker, parsedCodes, currentCode }) hasLink model update ->
+            if marker == Nothing && parsedCodes == [] && currentCode == Nothing then
                 case c of
                     '<' ->
-                        Parser (CSI (Just LessThan) [] Nothing) hasLink model update
+                        Parser (CSI { marker = Just LessThan, parsedCodes = [], currentCode = Nothing }) hasLink model update
 
                     '=' ->
-                        Parser (CSI (Just Equals) [] Nothing) hasLink model update
+                        Parser (CSI { marker = Just Equals, parsedCodes = [], currentCode = Nothing }) hasLink model update
 
                     '>' ->
-                        Parser (CSI (Just GreaterThan) [] Nothing) hasLink model update
+                        Parser (CSI { marker = Just GreaterThan, parsedCodes = [], currentCode = Nothing }) hasLink model update
 
                     '?' ->
-                        Parser (CSI (Just Question) [] Nothing) hasLink model update
+                        Parser (CSI { marker = Just Question, parsedCodes = [], currentCode = Nothing }) hasLink model update
 
                     _ ->
                         -- Not a parameter marker, process as normal CSI character
-                        handleCSICommand c marker codes currentCode hasLink model update parser
+                        handleCSICommand c marker parsedCodes currentCode hasLink model update parser
             else
-                -- We already have a marker or parameters, process normally
-                handleCSICommand c marker codes currentCode hasLink model update parser
+                -- We already have a marker or codes, process normally
+                handleCSICommand c marker parsedCodes currentCode hasLink model update parser
 
 
 -- Helper function to handle CSI command characters
 handleCSICommand : Char -> Maybe ParameterMarker -> List (Maybe Int) -> Maybe Int -> Bool -> a -> (Action -> a -> a) -> Parser a -> Parser a
-handleCSICommand c marker codes currentCode hasLink model update parser =
-    -- If we have a parameter marker, this is a private/experimental sequence
-    -- We consume it but don't execute any actions (per ANSI standard)
+handleCSICommand c marker parsedCodes currentCode hasLink model update parser =
+    -- If we have a parameter marker (<>=?), this is a private/experimental sequence
+    -- We consume it but don't execute any actions (per ANSI/DEC VT100 standard)
     case marker of
         Just _ ->
             -- Any letter terminates the sequence, but we produce no actions
             if Char.isAlpha c then
-                completeBracketed parser hasLink []
+                finishEscapeSequence parser hasLink []
             else if c == ';' then
-                Parser (CSI marker (codes ++ [ currentCode ]) Nothing) hasLink model update
+                Parser (CSI { marker = marker, parsedCodes = parsedCodes ++ [ currentCode ], currentCode = Nothing }) hasLink model update
             else if Char.isDigit c then
                 let
-                    digit = Char.toCode c - 48
+                    digitValue = Char.toCode c - 48
                     newCode = case currentCode of
-                        Nothing -> digit
-                        Just n -> n * 10 + digit
+                        Nothing -> digitValue
+                        Just n -> n * 10 + digitValue
                 in
-                Parser (CSI marker codes (Just newCode)) hasLink model update
+                Parser (CSI { marker = marker, parsedCodes = parsedCodes, currentCode = Just newCode }) hasLink model update
             else
                 -- Unknown character in private sequence, discard
-                completeBracketed parser hasLink []
+                finishEscapeSequence parser hasLink []
 
         Nothing ->
             -- No marker means standard CSI sequence, process normally
             case c of
                 'm' ->
-                    completeBracketed parser hasLink <|
+                    finishEscapeSequence parser hasLink <|
                         captureArguments <|
-                            List.map (Maybe.withDefault 0) (codes ++ [ currentCode ])
+                            List.map (Maybe.withDefault 0) (parsedCodes ++ [ currentCode ])
 
                 'A' ->
-                    completeBracketed parser hasLink
+                    finishEscapeSequence parser hasLink
                         [ CursorUp (max 1 (Maybe.withDefault 1 currentCode)) ]
 
                 'B' ->
-                    completeBracketed parser hasLink
+                    finishEscapeSequence parser hasLink
                         [ CursorDown (max 1 (Maybe.withDefault 1 currentCode)) ]
 
                 'C' ->
-                    completeBracketed parser hasLink
+                    finishEscapeSequence parser hasLink
                         [ CursorForward (max 1 (Maybe.withDefault 1 currentCode)) ]
 
                 'D' ->
-                    completeBracketed parser hasLink
+                    finishEscapeSequence parser hasLink
                         [ CursorBackward (max 1 (Maybe.withDefault 1 currentCode)) ]
 
                 'E' ->
-                    completeBracketed parser hasLink
+                    finishEscapeSequence parser hasLink
                         [ CursorDown (max 1 (Maybe.withDefault 1 currentCode)), CursorColumn 0 ]
 
                 'F' ->
-                    completeBracketed parser hasLink
+                    finishEscapeSequence parser hasLink
                         [ CursorUp (max 1 (Maybe.withDefault 1 currentCode)), CursorColumn 0 ]
 
                 'G' ->
-                    completeBracketed parser hasLink
+                    finishEscapeSequence parser hasLink
                         [ CursorColumn (max 0 (Maybe.withDefault 1 currentCode - 1)) ]
 
                 'H' ->
-                    completeBracketed parser hasLink <|
-                        cursorPosition (codes ++ [ currentCode ])
+                    finishEscapeSequence parser hasLink <|
+                        cursorPosition (parsedCodes ++ [ currentCode ])
 
                 'J' ->
-                    completeBracketed parser hasLink
+                    finishEscapeSequence parser hasLink
                         [ EraseDisplay (eraseMode (Maybe.withDefault 0 currentCode)) ]
 
                 'K' ->
-                    completeBracketed parser hasLink
+                    finishEscapeSequence parser hasLink
                         [ EraseLine (eraseMode (Maybe.withDefault 0 currentCode)) ]
 
                 'f' ->
-                    completeBracketed parser hasLink <|
-                        cursorPosition (codes ++ [ currentCode ])
+                    finishEscapeSequence parser hasLink <|
+                        cursorPosition (parsedCodes ++ [ currentCode ])
 
                 's' ->
-                    completeBracketed parser hasLink [ SaveCursorPosition ]
+                    finishEscapeSequence parser hasLink [ SaveCursorPosition ]
 
                 'u' ->
-                    completeBracketed parser hasLink [ RestoreCursorPosition ]
+                    finishEscapeSequence parser hasLink [ RestoreCursorPosition ]
 
                 ';' ->
-                    Parser (CSI marker (codes ++ [ currentCode ]) Nothing) hasLink model update
+                    Parser (CSI { marker = marker, parsedCodes = parsedCodes ++ [ currentCode ], currentCode = Nothing }) hasLink model update
 
                 '<' ->
-                    Parser (CSI (Just LessThan) codes currentCode) hasLink model update
+                    Parser (CSI { marker = Just LessThan, parsedCodes = parsedCodes, currentCode = currentCode }) hasLink model update
 
                 '=' ->
-                    Parser (CSI (Just Equals) codes currentCode) hasLink model update
+                    Parser (CSI { marker = Just Equals, parsedCodes = parsedCodes, currentCode = currentCode }) hasLink model update
 
                 '>' ->
-                    Parser (CSI (Just GreaterThan) codes currentCode) hasLink model update
+                    Parser (CSI { marker = Just GreaterThan, parsedCodes = parsedCodes, currentCode = currentCode }) hasLink model update
 
                 '?' ->
-                    Parser (CSI (Just Question) codes currentCode) hasLink model update
+                    Parser (CSI { marker = Just Question, parsedCodes = parsedCodes, currentCode = currentCode }) hasLink model update
 
                 _ ->
                     if Char.isDigit c then
                         let
-                            digit = Char.toCode c - 48  -- '0' is ASCII 48
+                            digitValue = Char.toCode c - 48  -- '0' is ASCII 48
                             newCode = case currentCode of
-                                Nothing -> digit
-                                Just n -> n * 10 + digit
+                                Nothing -> digitValue
+                                Just n -> n * 10 + digitValue
                         in
-                        Parser (CSI marker codes (Just newCode)) hasLink model update
+                        Parser (CSI { marker = marker, parsedCodes = parsedCodes, currentCode = Just newCode }) hasLink model update
                     else
                         -- Any non-digit, non-semicolon character (letter or otherwise) terminates CSI
                         -- Unknown/unrecognized commands are discarded per DEC/VT100 behavior
                         -- Private sequences (with markers) that we don't recognize are also discarded
-                        completeBracketed parser hasLink []
+                        finishEscapeSequence parser hasLink []
 
 
-completeUnescaped : Parser a -> a
-completeUnescaped parser =
-    case parser of
-        Parser (Unescaped "") _ model update ->
-            model
-
-        Parser (Unescaped str) _ model update ->
-            update (Print str) model
-
-        -- should be impossible
-        Parser _ _ model _ ->
-            model
-
-
-completeBracketed : Parser a -> Bool -> List Action -> Parser a
-completeBracketed (Parser _ hasLink model update) newHasLink actions =
+finishEscapeSequence : Parser a -> Bool -> List Action -> Parser a
+finishEscapeSequence (Parser _ hasLink model update) newHasLink actions =
     Parser (Unescaped "") newHasLink (List.foldl update model actions) update
 
 
