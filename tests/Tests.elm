@@ -470,6 +470,7 @@ parsing =
             \() ->
                 -- Real-world case: ESC[r ESC[m ESC(B ESC[?1003l ESC[?1006l ESC[?2004l ESC[1;1H ESC[1;24r ESC[1;1H
                 -- Unknown commands (r, ?...l) should be discarded, only recognized commands output
+                -- ESC(B is a charset designation sequence and should be consumed/ignored
                 Expect.equal
                     ([ Ansi.SetForeground Nothing
                     , Ansi.SetBackground Nothing
@@ -482,7 +483,6 @@ parsing =
                     , Ansi.SetStrikethrough False
                     , Ansi.SetFraktur False
                     , Ansi.SetFramed False
-                    , Ansi.Print "(B"
                     , Ansi.CursorPosition 1 1
                     , Ansi.CursorPosition 1 1
                     ] )
@@ -602,6 +602,50 @@ parsing =
                     , Ansi.Print "after"
                     ]
                     (Ansi.parse "before\u{001B}[>;1;2mafter")
+        , test "charset designation ESC(B is consumed and ignored" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.Print "before"
+                    , Ansi.Print "after"
+                    ]
+                    (Ansi.parse "before\u{001B}(Bafter")
+        , test "charset designation ESC)0 is consumed and ignored" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.Print "text"
+                    , Ansi.Print "more"
+                    ]
+                    (Ansi.parse "text\u{001B})0more")
+        , test "charset designation ESC*A is consumed and ignored" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.Print "start"
+                    , Ansi.Print "end"
+                    ]
+                    (Ansi.parse "start\u{001B}*Aend")
+        , test "charset designation ESC+B is consumed and ignored" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.Print "foo"
+                    , Ansi.Print "bar"
+                    ]
+                    (Ansi.parse "foo\u{001B}+Bbar")
+        , test "multiple charset designations in sequence" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.Print "a"
+                    , Ansi.Print "b"
+                    , Ansi.Print "c"
+                    ]
+                    (Ansi.parse "a\u{001B}(B\u{001B})0b\u{001B}*Ac")
+        , test "charset designation mixed with CSI sequences" <|
+            \() ->
+                Expect.equal
+                    [ Ansi.SetBold True
+                    , Ansi.Print "bold"
+                    , Ansi.Print "text"
+                    ]
+                    (Ansi.parse "\u{001B}[1mbold\u{001B}(Btext")
         ]
 
 

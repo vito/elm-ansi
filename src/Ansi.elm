@@ -99,6 +99,7 @@ type ParserState
     | CSI (Maybe ParameterMarker) (List (Maybe Int)) (Maybe Int)
     | OSC String
     | OSCTerminating String
+    | CharsetDesignation
     | Unescaped String
 
 
@@ -157,6 +158,9 @@ completeParsing parser =
 
         Parser (OSCTerminating chars) _ model update ->
             update (Remainder <| "\u{001B}]" ++ chars ++ "\u{001B}") model
+
+        Parser CharsetDesignation _ model update ->
+            update (Remainder "\u{001B}(") model
 
         Parser (Unescaped "") _ model _ ->
             model
@@ -410,6 +414,18 @@ parseChar c parser =
                 ']' ->
                     Parser (OSC "") hasLink model update
 
+                '(' ->
+                    Parser CharsetDesignation hasLink model update
+
+                ')' ->
+                    Parser CharsetDesignation hasLink model update
+
+                '*' ->
+                    Parser CharsetDesignation hasLink model update
+
+                '+' ->
+                    Parser CharsetDesignation hasLink model update
+
                 '\\' ->
                     Parser (Unescaped "\\") hasLink model update
 
@@ -445,6 +461,9 @@ parseChar c parser =
                 _ ->
                     -- Not a terminator, continue as a normal OSC sequence with ESC included
                     Parser (OSC (chars ++ "\u{001B}" ++ String.fromChar c)) hasLink model update
+
+        Parser CharsetDesignation hasLink model update ->
+            Parser (Unescaped "") hasLink model update
 
         Parser (CSI marker codes currentCode) hasLink model update ->
             if marker == Nothing && codes == [] && currentCode == Nothing then
