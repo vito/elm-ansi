@@ -15,13 +15,14 @@ will yield.
 import Char
 import String
 import Url
+import UnicodeWidth
 
 
 {-| The events relevant to interpreting the stream.
 
   - `Print` is a chunk of text which should be interpreted with the style implied
-    by the preceding actions (i.e. `[SetBold True, Print "foo"]`) should yield a
-    bold `foo`
+    by the preceding actions (i.e. `[SetBold True, Print "foo" 3]`) should yield a
+    bold `foo`. The Int is the pre-calculated display width for terminal rendering.
   - `Remainder` is a partial ANSI escape sequence, returned at the end of the
     actions if it was cut off. The next string passed to `parse` should have this
     prepended to it.
@@ -31,7 +32,7 @@ import Url
 
 -}
 type Action
-    = Print String
+    = Print String Int
     | Remainder String
     | SetForeground (Maybe Color)
     | SetBackground (Maybe Color)
@@ -99,13 +100,28 @@ type alias CSIState =
     }
 
 
+type alias WidthAccumulator =
+    { totalWidth : Int
+    , lastChar : Maybe Char
+    , lastCharWidth : Int
+    }
+
+
+emptyWidthAccumulator : WidthAccumulator
+emptyWidthAccumulator =
+    { totalWidth = 0
+    , lastChar = Nothing
+    , lastCharWidth = 0
+    }
+
+
 type ParserState
     = Escaped
     | CSI CSIState
     | OSC String
     | OSCAwaitingTerminator String
     | CharsetDesignation
-    | Unescaped String
+    | Unescaped String WidthAccumulator
 
 
 type ParameterMarker
@@ -138,7 +154,7 @@ parseInto model update ansi =
 
 initialParser : a -> (Action -> a -> a) -> Parser a
 initialParser model update =
-    Parser (Unescaped "") False model update
+    Parser (Unescaped "" emptyWidthAccumulator) False model update
 
 
 finalizeParsing : Parser a -> a
@@ -167,43 +183,84 @@ finalizeParsing parser =
         Parser CharsetDesignation _ model update ->
             update (Remainder "\u{001B}(") model
 
-        Parser (Unescaped "") _ model _ ->
+        Parser (Unescaped "" _) _ model _ ->
             model
 
-        Parser (Unescaped str) _ model update ->
-            update (Print str) model
+        Parser (Unescaped str widthAcc) _ model update ->
+            update (Print str widthAcc.totalWidth) model
 
 
 completeEscapeSequence : Parser a -> Bool -> List Action -> Parser a
 completeEscapeSequence (Parser _ hasLink model update) newHasLink actions =
-    Parser (Unescaped "") newHasLink (List.foldl update model actions) update
+    Parser (Unescaped "" emptyWidthAccumulator) newHasLink (List.foldl update model actions) update
+
+
+{-| Accumulate a character and its width, handling special cases:
+  - Variation selectors (FE0E/FE0F) modify the previous character's width
+-}
+accumulateCharWidth : Char -> WidthAccumulator -> WidthAccumulator
+accumulateCharWidth c widthAcc =
+    let
+        charCode = Char.toCode c
+        isVariationSelector = charCode == 0xFE0E || charCode == 0xFE0F
+    in
+    if isVariationSelector then
+        -- Variation selector modifies the previous character
+        case widthAcc.lastChar of
+            Nothing ->
+                -- No previous char, treat as zero-width
+                { widthAcc | lastChar = Just c, lastCharWidth = 0 }
+
+            Just _ ->
+                -- Adjust previous character's width based on selector
+                let
+                    newWidth = if charCode == 0xFE0E then 1 else 2
+                    widthDelta = newWidth - widthAcc.lastCharWidth
+                in
+                { totalWidth = widthAcc.totalWidth + widthDelta
+                , lastChar = Just c
+                , lastCharWidth = 0
+                }
+
+    else
+        -- Normal character
+        let
+            charWidth = UnicodeWidth.runeWidth c
+        in
+        { totalWidth = widthAcc.totalWidth + charWidth
+        , lastChar = Just c
+        , lastCharWidth = charWidth
+        }
 
 
 parseChar : Char -> Parser a -> Parser a
 parseChar c parser =
     case parser of
-        Parser (Unescaped str) hasLink model update ->
+        Parser (Unescaped str widthAcc) hasLink model update ->
             case c of
                 '\r' ->
                     let
-                        updatedModel = if str == "" then model else update (Print str) model
+                        updatedModel = if str == "" then model else update (Print str widthAcc.totalWidth) model
                     in
-                    Parser (Unescaped "") hasLink (update CarriageReturn updatedModel) update
+                    Parser (Unescaped "" emptyWidthAccumulator) hasLink (update CarriageReturn updatedModel) update
 
                 '\n' ->
                     let
-                        updatedModel = if str == "" then model else update (Print str) model
+                        updatedModel = if str == "" then model else update (Print str widthAcc.totalWidth) model
                     in
-                    Parser (Unescaped "") hasLink (update Linebreak updatedModel) update
+                    Parser (Unescaped "" emptyWidthAccumulator) hasLink (update Linebreak updatedModel) update
 
                 '\u{001B}' -> -- ESC
                     let
-                        updatedModel = if str == "" then model else update (Print str) model
+                        updatedModel = if str == "" then model else update (Print str widthAcc.totalWidth) model
                     in
                     Parser Escaped hasLink updatedModel update
 
                 _ ->
-                    Parser (Unescaped (str ++ String.fromChar c)) hasLink model update
+                    let
+                        newWidthAcc = accumulateCharWidth c widthAcc
+                    in
+                    Parser (Unescaped (str ++ String.fromChar c) newWidthAcc) hasLink model update
 
         Parser Escaped hasLink model update ->
             case c of
@@ -226,37 +283,43 @@ parseChar c parser =
                     Parser CharsetDesignation hasLink model update
 
                 '7' ->
-                    Parser (Unescaped "") hasLink (update SaveCursorPosition model) update
+                    Parser (Unescaped "" emptyWidthAccumulator) hasLink (update SaveCursorPosition model) update
 
                 '8' ->
-                    Parser (Unescaped "") hasLink (update RestoreCursorPosition model) update
+                    Parser (Unescaped "" emptyWidthAccumulator) hasLink (update RestoreCursorPosition model) update
 
                 'M' ->
-                    Parser (Unescaped "") hasLink (update (CursorUp 1) model) update
+                    Parser (Unescaped "" emptyWidthAccumulator) hasLink (update (CursorUp 1) model) update
 
                 'D' ->
-                    Parser (Unescaped "") hasLink (update (CursorDown 1) model) update
+                    Parser (Unescaped "" emptyWidthAccumulator) hasLink (update (CursorDown 1) model) update
 
                 'E' ->
-                    Parser (Unescaped "") hasLink (update Linebreak (update CarriageReturn model)) update
+                    Parser (Unescaped "" emptyWidthAccumulator) hasLink (update Linebreak (update CarriageReturn model)) update
 
                 '=' ->
-                    Parser (Unescaped "") hasLink model update
+                    Parser (Unescaped "" emptyWidthAccumulator) hasLink model update
 
                 '>' ->
-                    Parser (Unescaped "") hasLink model update
+                    Parser (Unescaped "" emptyWidthAccumulator) hasLink model update
 
                 'c' ->
-                    Parser (Unescaped "") hasLink model update
+                    Parser (Unescaped "" emptyWidthAccumulator) hasLink model update
 
                 'H' ->
-                    Parser (Unescaped "") hasLink model update
+                    Parser (Unescaped "" emptyWidthAccumulator) hasLink model update
 
                 '\\' ->
-                    Parser (Unescaped "\\") hasLink model update
+                    let
+                        widthAcc = accumulateCharWidth '\\' emptyWidthAccumulator
+                    in
+                    Parser (Unescaped "\\" widthAcc) hasLink model update
 
                 _ ->
-                    Parser (Unescaped (String.fromChar c)) hasLink model update
+                    let
+                        widthAcc = accumulateCharWidth c emptyWidthAccumulator
+                    in
+                    Parser (Unescaped (String.fromChar c) widthAcc) hasLink model update
 
         Parser (OSC chars) hasLink model update ->
             case c of
@@ -288,7 +351,7 @@ parseChar c parser =
                     Parser (OSC (chars ++ "\u{001B}" ++ String.fromChar c)) hasLink model update
 
         Parser CharsetDesignation hasLink model update ->
-            Parser (Unescaped "") hasLink model update
+            Parser (Unescaped "" emptyWidthAccumulator) hasLink model update
 
         Parser (CSI { marker, parsedCodes, currentCode }) hasLink model update ->
             if marker == Nothing && parsedCodes == [] && currentCode == Nothing then
