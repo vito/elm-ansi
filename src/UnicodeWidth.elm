@@ -18,7 +18,6 @@ Based on Unicode 16.0 data from the uniwidth Go package.
 -}
 
 import Array exposing (Array)
-import Regex
 
 
 {-| Returns the visual width of a character in monospace terminals.
