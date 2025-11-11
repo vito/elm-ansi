@@ -83,6 +83,8 @@ type Color
     | Custom Int Int Int
 
 
+{-| The types of erasure modes for screen/line clearing.
+-}
 type EraseMode
     = EraseToBeginning
     | EraseToEnd
