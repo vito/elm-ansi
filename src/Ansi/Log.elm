@@ -324,9 +324,6 @@ writeChunk pos chunk line =
     let
         len =
             lineLen line
-
-        afterLen =
-            len - (chunk.displayWidth + pos)
     in
     if len == pos then
         addChunk chunk line
@@ -338,6 +335,9 @@ writeChunk pos chunk line =
         let
             appended =
                 addChunk chunk (dropRight (len - pos) line)
+
+            afterLen =
+                len - lineLen appended
         in
         if afterLen > 0 then
             List.foldl addChunk appended (Tuple.first <| takeRight afterLen line)
@@ -376,13 +376,51 @@ dropRight n line =
 
             else
                 let
-                    newText =
-                        String.dropRight n c.text
-
-                    newWidth =
-                        stringDisplayWidth newText
+                    result = dropRightFromText n c.text
+                    actualDropped = c.displayWidth - result.width
                 in
-                ( { c | text = newText, displayWidth = newWidth } :: cs, llen - n )
+                ( { c | text = result.text, displayWidth = result.width } :: cs, llen - actualDropped )
+
+
+{-| Drop n display-width units from the right of text, preserving character boundaries.
+Returns the remaining text and its display width.
+-}
+dropRightFromText : Int -> String -> { text : String, width : Int }
+dropRightFromText widthToDrop text =
+    let
+        chars = String.toList text
+        totalWidth = stringDisplayWidth text
+        targetWidth = totalWidth - widthToDrop
+    in
+    -- Build text from left until we reach target width
+    takeLeftWidth targetWidth chars 0 []
+
+
+{-| Take characters from left until we accumulate targetWidth display units.
+Handles multi-width characters by never splitting them.
+-}
+takeLeftWidth : Int -> List Char -> Int -> List Char -> { text : String, width : Int }
+takeLeftWidth targetWidth chars accWidth accChars =
+    case chars of
+        [] ->
+            { text = String.fromList (List.reverse accChars)
+            , width = accWidth
+            }
+
+        c :: rest ->
+            let
+                charWidth = UnicodeWidth.runeWidth c
+                newWidth = accWidth + charWidth
+            in
+            if newWidth <= targetWidth then
+                -- Character fits, include it
+                takeLeftWidth targetWidth rest newWidth (c :: accChars)
+            else
+                -- Character would exceed target, stop here
+                -- This means we undershoot rather than split characters
+                { text = String.fromList (List.reverse accChars)
+                , width = accWidth
+                }
 
 
 takeRight : Int -> Line -> Line
@@ -399,14 +437,55 @@ takeRight n line =
                 ( [ c ], c.displayWidth )
 
             else
+                -- Need to take n width units from right of this chunk
                 let
-                    newText =
-                        String.right n c.text
-
-                    newWidth =
-                        stringDisplayWidth newText
+                    result = takeRightFromText n c.text
                 in
-                ( [ { c | text = newText, displayWidth = newWidth, style = c.style, linkParams = c.linkParams, linkUrl = c.linkUrl } ], n )
+                ( [ { c | text = result.text, displayWidth = result.width, style = c.style, linkParams = c.linkParams, linkUrl = c.linkUrl } ], result.width )
+
+
+{-| Take n display-width units from the right of text, preserving character boundaries.
+Returns the taken text and its display width.
+-}
+takeRightFromText : Int -> String -> { text : String, width : Int }
+takeRightFromText widthToTake text =
+    let
+        chars = String.toList text
+        totalWidth = stringDisplayWidth text
+        widthToSkip = totalWidth - widthToTake
+    in
+    -- Skip widthToSkip units from left, then take the rest
+    skipLeftWidth widthToSkip chars 0
+
+
+{-| Skip characters from left until we've skipped targetWidth display units.
+Returns remaining characters and their width.
+When exact target can't be hit (would split emoji), overshoots the skip to undershoot the take.
+-}
+skipLeftWidth : Int -> List Char -> Int -> { text : String, width : Int }
+skipLeftWidth targetWidth chars accWidth =
+    case chars of
+        [] ->
+            { text = "", width = 0 }
+
+        c :: rest ->
+            let
+                charWidth = UnicodeWidth.runeWidth c
+                newWidth = accWidth + charWidth
+            in
+            if newWidth < targetWidth then
+                -- Haven't skipped enough yet, continue
+                skipLeftWidth targetWidth rest newWidth
+            else if newWidth == targetWidth then
+                -- Exactly at boundary, return rest
+                { text = String.fromList rest
+                , width = stringDisplayWidth (String.fromList rest)
+                }
+            else
+                -- Would exceed target - skip this char too (overshoot skip to undershoot take)
+                { text = String.fromList rest
+                , width = stringDisplayWidth (String.fromList rest)
+                }
 
 
 spacing : Style -> List String -> Maybe String -> Int -> Chunk
