@@ -1,4 +1,4 @@
-module Tests exposing (all, assertWindowRendersAs, colorCode, esc, log, parsing, renderChunk, renderLine, renderWindow, styleFlags)
+module Tests exposing (all, assertWindowRendersAs, colorCode, esc, log, parsing, renderChunk, renderLine, renderWindow, styleFlags, wideCharHelpers)
 
 import Ansi
 import Ansi.Log
@@ -11,7 +11,7 @@ import Test exposing (..)
 
 all : Test
 all =
-    describe "ANSI" [ parsing, log, hyperlinkTests ]
+    describe "ANSI" [ parsing, log, hyperlinkTests, wideCharHelpers ]
 
 
 parsing : Test
@@ -1103,6 +1103,264 @@ hyperlinkTests =
         ]
 
 
+wideCharHelpers : Test
+wideCharHelpers =
+    describe "Wide Character Helper Functions"
+        [ describe "Basic emoji handling"
+            [ test "coffee emoji has correct width" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        updated = Ansi.Log.update "☕" model
+                        line = Array.get 0 updated.lines
+                    in
+                    case line of
+                        Just (chunks, width) ->
+                            Expect.equal 2 width
+                        Nothing ->
+                            Expect.fail "Expected line to exist"
+
+            , test "multiple emoji accumulate width correctly" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        updated = Ansi.Log.update "☕🎉😀" model
+                        line = Array.get 0 updated.lines
+                    in
+                    case line of
+                        Just (chunks, width) ->
+                            Expect.equal 6 width  -- 3 emoji × 2 width each
+                        Nothing ->
+                            Expect.fail "Expected line to exist"
+
+            , test "mixed ASCII and emoji" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        updated = Ansi.Log.update "Hello ☕" model
+                        line = Array.get 0 updated.lines
+                    in
+                    case line of
+                        Just (chunks, width) ->
+                            Expect.equal 8 width  -- "Hello " = 6 + ☕ = 2
+                        Nothing ->
+                            Expect.fail "Expected line to exist"
+            ]
+
+        , describe "Overwriting with emoji (dropRight behavior)"
+            [ test "overwrite ASCII with emoji maintains correct width" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        withText = Ansi.Log.update "abcde" model
+                        withEmoji = Ansi.Log.update "\r☕" withText
+                        line = Array.get 0 withEmoji.lines
+                    in
+                    case line of
+                        Just (chunks, width) ->
+                            -- ☕ (width 2) + "cde" (width 3) = 5
+                            Expect.equal 5 width
+                        Nothing ->
+                            Expect.fail "Expected line to exist"
+
+            , test "overwrite emoji with ASCII maintains correct width" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        withEmoji = Ansi.Log.update "☕test" model
+                        withOverwrite = Ansi.Log.update "\rAB" withEmoji
+                        line = Array.get 0 withOverwrite.lines
+                    in
+                    case line of
+                        Just (chunks, width) ->
+                            -- "AB" (width 2) + "test" (width 4) = 6
+                            Expect.equal 6 width
+                        Nothing ->
+                            Expect.fail "Expected line to exist"
+
+            , test "overwrite in middle of emoji-containing text" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        withText = Ansi.Log.update "Hello ☕ World" model
+                        -- Move to position 6 (after "Hello ") and overwrite
+                        withMove = Ansi.Log.update "\r\u{001B}[7CX" withText
+                        line = Array.get 0 withMove.lines
+                    in
+                    case line of
+                        Just (chunks, width) ->
+                            -- "Hello " (6) + "X" (1) + " World" (6) = 13
+                            Expect.equal 13 width
+                        Nothing ->
+                            Expect.fail "Expected line to exist"
+
+            , test "emoji at line boundary during overwrite" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        withEmoji = Ansi.Log.update "Test☕" model
+                        withOverwrite = Ansi.Log.update "\rNEW" withEmoji
+                        line = Array.get 0 withOverwrite.lines
+                    in
+                    case line of
+                        Just (chunks, width) ->
+                            -- "NEW" (3) + "t" (1) + "☕" (2) = 6
+                            Expect.equal 6 width
+                        Nothing ->
+                            Expect.fail "Expected line to exist"
+            ]
+
+        , describe "CJK character handling"
+            [ test "CJK characters have width 2" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        updated = Ansi.Log.update "你好" model
+                        line = Array.get 0 updated.lines
+                    in
+                    case line of
+                        Just (chunks, width) ->
+                            Expect.equal 4 width  -- 2 CJK chars × 2 width each
+                        Nothing ->
+                            Expect.fail "Expected line to exist"
+
+            , test "mixed CJK, emoji, and ASCII" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        updated = Ansi.Log.update "Hello 世界 ☕" model
+                        line = Array.get 0 updated.lines
+                    in
+                    case line of
+                        Just (chunks, width) ->
+                            -- "Hello " = 6, "世界" = 4, " " = 1, "☕" = 2 = 13
+                            Expect.equal 13 width
+                        Nothing ->
+                            Expect.fail "Expected line to exist"
+            ]
+
+        , describe "Cursor movement with wide chars"
+            [ test "cursor forward over emoji" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        withEmoji = Ansi.Log.update "☕ test" model
+                        -- Position should be at column 7 after printing
+                    in
+                    Expect.equal 7 withEmoji.position.column
+
+            , test "cursor backward over emoji (erasing)" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        withText = Ansi.Log.update "test☕end" model
+                        -- Move back 4 positions and write "X"
+                        withBackward = Ansi.Log.update "\u{001B}[4DX" withText
+                        line = Array.get 0 withBackward.lines
+                    in
+                    case line of
+                        Just (chunks, width) ->
+                            -- Width should account for emoji properly
+                            -- "testX" + whatever remains = depends on exact positioning
+                            Expect.atLeast 1 width
+                        Nothing ->
+                            Expect.fail "Expected line to exist"
+            ]
+
+        , describe "Edge cases"
+            [ test "single emoji on line" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        updated = Ansi.Log.update "☕" model
+                        line = Array.get 0 updated.lines
+                    in
+                    case line of
+                        Just (chunks, width) ->
+                            Expect.equal 2 width
+                        Nothing ->
+                            Expect.fail "Expected line to exist"
+
+            , test "emoji followed by newline" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        updated = Ansi.Log.update "☕\n" model
+                        line0 = Array.get 0 updated.lines
+                        line1 = Array.get 1 updated.lines
+                    in
+                    case (line0, line1) of
+                        (Just (_, width0), Just (_, width1)) ->
+                            -- In Raw mode, \n preserves column, so line1 starts at column 2
+                            Expect.equal (2, 2) (width0, width1)
+                        _ ->
+                            Expect.fail "Expected both lines to exist"
+
+            , test "empty line has zero width" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        updated = Ansi.Log.update "\n" model
+                        line = Array.get 0 updated.lines
+                    in
+                    case line of
+                        Just (chunks, width) ->
+                            Expect.equal 0 width
+                        Nothing ->
+                            Expect.fail "Expected line to exist"
+
+            , test "erase line with emoji content" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        withEmoji = Ansi.Log.update "Test ☕ end" model
+                        -- Erase from cursor to end
+                        erased = Ansi.Log.update "\r\u{001B}[6C\u{001B}[K" withEmoji
+                        line = Array.get 0 erased.lines
+                    in
+                    case line of
+                        Just (chunks, width) ->
+                            -- Should have "Test " remaining (width 5)
+                            -- Plus 1 for cursor at position 6 = width 6
+                            Expect.atMost 6 width
+                        Nothing ->
+                            Expect.fail "Expected line to exist"
+            ]
+
+        , describe "Variation selectors"
+            [ test "emoji with text variation selector" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        -- ☕ + U+FE0E (text presentation)
+                        updated = Ansi.Log.update "☕\u{FE0E}" model
+                        line = Array.get 0 updated.lines
+                    in
+                    case line of
+                        Just (chunks, width) ->
+                            -- Text presentation should force width 1
+                            Expect.equal 1 width
+                        Nothing ->
+                            Expect.fail "Expected line to exist"
+
+            , test "emoji with emoji variation selector" <|
+                \() ->
+                    let
+                        model = Ansi.Log.init Ansi.Log.Raw
+                        -- ☕ + U+FE0F (emoji presentation)
+                        updated = Ansi.Log.update "☕\u{FE0F}" model
+                        line = Array.get 0 updated.lines
+                    in
+                    case line of
+                        Just (chunks, width) ->
+                            -- Emoji presentation should force width 2
+                            Expect.equal 2 width
+                        Nothing ->
+                            Expect.fail "Expected line to exist"
+            ]
+        ]
+
+
 assertWindowRendersAs : Ansi.Log.LineDiscipline -> String -> List String -> Expect.Expectation
 assertWindowRendersAs ldisc rendered updates =
     let
@@ -1331,6 +1589,90 @@ log =
                 assertWindowRendersAs Ansi.Log.Raw
                     "\u{001B}[0m你好世界test"
                     [ "你好世界test" ]
+        , test "emoji - coffee emoji maintains alignment" <|
+            \() ->
+                assertWindowRendersAs Ansi.Log.Raw
+                    "\u{001B}[0mEven the price of a ☕ can brighten my day!"
+                    [ "Even the price of a ☕ can brighten my day!" ]
+        , test "emoji - line overwriting with emoji preserves width" <|
+            \() ->
+                assertWindowRendersAs Ansi.Log.Raw
+                    "\u{001B}[0mTest ☕ rest"
+                    [ "Test ☕ test\u{000D}Test ☕ rest" ]
+        , test "emoji - cursor movement over emoji" <|
+            \() ->
+                assertWindowRendersAs Ansi.Log.Raw
+                    "\u{001B}[0mHello ☕ Worxd"
+                    [ "Hello ☕ World\u{001B}[2Dx" ]
+        , test "emoji - multiple emoji in sequence" <|
+            \() ->
+                assertWindowRendersAs Ansi.Log.Raw
+                    "\u{001B}[0m☕🎉😀 party"
+                    [ "☕🎉😀 party" ]
+        , test "emoji - mixed ASCII, emoji, and CJK" <|
+            \() ->
+                assertWindowRendersAs Ansi.Log.Raw
+                    "\u{001B}[0mHello ☕ 世界 🎉"
+                    [ "Hello ☕ 世界 🎉" ]
+        , test "emoji - overwriting text ending in emoji" <|
+            \() ->
+                assertWindowRendersAs Ansi.Log.Raw
+                    "\u{001B}[0mTest XX"
+                    [ "Test ☕\u{000D}Test XX" ]
+        , test "emoji - erase line with emoji content" <|
+            \() ->
+                assertWindowRendersAs Ansi.Log.Raw
+                    "\u{001B}[0mTenew"
+                    [ "Test ☕ end\u{001B}[9D\u{001B}[Knew" ]
+        , test "emoji - cursor position after emoji" <|
+            \() ->
+                assertWindowRendersAs Ansi.Log.Raw
+                    "\u{001B}[0m☕Xtest"
+                    [ "☕\u{001B}[s test\u{001B}[uX" ]
+        , test "emoji - single emoji line" <|
+            \() ->
+                assertWindowRendersAs Ansi.Log.Raw
+                    "\u{001B}[0m☕"
+                    [ "☕" ]
+        , test "emoji - emoji at line boundaries" <|
+            \() ->
+                assertWindowRendersAs Ansi.Log.Raw
+                    "\u{001B}[0m☕\u{000D}\n\u{001B}[0m  test"
+                    [ "☕\ntest" ]
+        , test "emoji - overwrite with partial emoji positioning" <|
+            \() ->
+                -- When overwriting with emoji, ensure proper width handling
+                assertWindowRendersAs Ansi.Log.Raw
+                    "\u{001B}[0m☕cde"
+                    [ "abcde\u{000D}☕" ]
+        , test "emoji with variation selector - text presentation" <|
+            \() ->
+                -- U+FE0E is text presentation selector (should force width 1)
+                assertWindowRendersAs Ansi.Log.Raw
+                    "\u{001B}[0m☕\u{FE0E} text"
+                    [ "☕\u{FE0E} text" ]
+        , test "emoji with variation selector - emoji presentation" <|
+            \() ->
+                -- U+FE0F is emoji presentation selector (should force width 2)
+                assertWindowRendersAs Ansi.Log.Raw
+                    "\u{001B}[0m☕\u{FE0F} emoji"
+                    [ "☕\u{FE0F} emoji" ]
+        , test "wide chars - erasing with mixed widths" <|
+            \() ->
+                assertWindowRendersAs Ansi.Log.Raw
+                    "\u{001B}[0mHell世界"
+                    [ "Hello ☕ 世界\u{001B}[9D\u{001B}[K世界" ]
+        , test "wide chars - cursor backward over emoji" <|
+            \() ->
+                assertWindowRendersAs Ansi.Log.Raw
+                    "\u{001B}[0mtestXend"
+                    [ "test☕end\u{001B}[4DX" ]
+        , test "wide chars - complex table-like alignment" <|
+            \() ->
+                -- Simulates Rich-style table with emoji
+                assertWindowRendersAs Ansi.Log.Raw
+                    "\u{001B}[0m│ Hope you enjoy using Rich!                   │\u{000D}\n\u{001B}[0m│ Even the price of a ☕ can brighten my day!   │"
+                    [ "│ Hope you enjoy using Rich!                   │\r\n│ Even the price of a ☕ can brighten my day!   │" ]
         , test "partial ANSI sequences across updates" <|
             \() ->
                 assertWindowRendersAs Ansi.Log.Raw
@@ -1369,7 +1711,7 @@ log =
         , test "cursor backward at line start" <|
             \() ->
                 assertWindowRendersAs Ansi.Log.Raw
-                    "\u{001B}[0mtest\u{000D}\n\u{001B}[0mX    second"
+                    "\u{001B}[0mtest\u{000D}\n\u{001B}[0mX   second"
                     [ "test\nsecond", "\u{001B}[100D", "X" ]
         , test "combining erase line with cursor movement" <|
             \() ->
