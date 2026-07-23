@@ -1,0 +1,30 @@
+type ElmAnsi {
+  pub source: Directory! @defaultPath(path: "/") @ignorePatterns(patterns: [
+    "elm-stuff"
+    ".dagger"
+    "dagger.json"
+  ])
+
+  pub bump: Changeset! {
+    base.
+      withExec(["sh", "-c", "yes | npm exec elm bump"]).
+      directory(".").
+      withoutDirectory("elm-stuff").
+      changes(base.directory("."))
+  }
+
+  pub publish: Changeset! {
+    base.
+      withExec(["npm", "exec", "elm", "publish"]).
+      directory(".").
+      withoutDirectory("elm-stuff").
+      changes(base.directory("."))
+  }
+
+  let base: Container! {
+    container.from("node").
+      withWorkdir("/src").
+      withDirectory(".", source).
+      withExec(["npm", "install"])
+  }
+}

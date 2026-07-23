@@ -1,0 +1,6 @@
+{
+  "name": "elm-ansi",
+  "engineVersion": "v0.21.7",
+  "sdk": "dang",
+  "source": ".dagger"
+}
